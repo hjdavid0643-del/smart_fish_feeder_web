@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Fish Feeder Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --blue-bg: #2575fc;
+            --blue-dark: #1259a0;
+            --green: #2e7d32;
+            --red: #e53935;
+            --orange: #ff7043;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            min-height: 100%;
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #6a11cb 0%, var(--blue-bg) 100%);
+            color: #fff;
+        }
+        .page-wrap {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .top-bar {
+            display: flex;
+            justify-content: flex-end;
+            padding: 12px 16px;
+        }
+        .logout-btn {
+            background-color: var(--red);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .logout-btn:hover {
+            background-color: #c62828;
+        }
+        .container {
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto 24px auto;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 16px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            text-align: center;
+            margin: 4px 0 10px 0;
+            font-size: 22px;
+        }
+        h2 {
+            margin-top: 18px;
+            margin-bottom: 8px;
+            font-size: 18px;
+            text-align: center;
+        }
+        @media (min-width: 768px) {
+            .container { padding: 24px 30px; }
+            h1 { font-size: 26px; }
+            h2 { font-size: 20px; text-align: left; }
+        }
+        .top-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .summary {
+            padding: 10px 12px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .btn {
+            border: none;
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            color: #fff;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+        }
+        .btn-view {
+            background-color: #009688;
+        }
+        .btn-view.active {
+            background-color: #00796b;
+        }
+        .btn-refresh {
+            background-color: #1976d2;
+        }
+        .btn-refresh:hover {
+            background-color: var(--blue-dark);
+        }
+        .btn-view:hover {
+            background-color: #00897b;
+        }
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        th, td {
+            padding: 8px 10px;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.15);
+        }
+        th {
+            background: rgba(0, 0, 0, 0.3);
+            white-space: nowrap;
+        }
+        @media (min-width: 768px) {
+            table { font-size: 14px; }
+        }
+        .chart-wrapper {
+            background: #ffffff;
+            padding: 12px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+        }
+        @media (min-width: 768px) {
+            .chart-wrapper { padding: 20px; }
+        }
+        .feed-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0 10px 0;
+        }
+        .btn-feed-on {
+            background-color: var(--green);
+        }
+        .btn-feed-off {
+            background-color: var(--red);
+        }
+        .btn-auto {
+            background-color: var(--blue-bg);
+        }
+        .btn-feed-on:hover { background-color: #1b5e20; }
+        .btn-feed-off:hover { background-color: #c62828; }
+        .btn-auto:hover { background-color: var(--blue-dark); }
+        .btn-auto span {
+            font-size: 11px;
+            font-weight: 400;
+        }
+        #historicalSection {
+            margin-top: 6px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-wrap">
+
+        <!-- Top bar with Logout button -->
+        <div class="top-bar">
+            <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+        </div>
+
+        <!-- Main dashboard content -->
+        <div class="container">
+            <h1>Smart Fish Feeder Dashboard</h1>
+
+            <!-- View Historical + Refresh -->
+            <div class="top-buttons">
+                <button id="btnHistorical" class="btn btn-view" type="button">
+                    View Historical Data
+                </button>
+                <button class="btn btn-refresh" type="button" onclick="location.reload();">
+                    Refresh
+                </button>
+            </div>
+
+            <!-- Overall status / summary bar -->
+            <div class="summary" style="background-color: {{ alert_color }};">
+                {{ summary }}
+            </div>
+
+            <!-- Latest readings table -->
+            <h2>Latest Sensor Readings (Last 10)</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Temperature (°C)</th>
+                            <th>pH</th>
+                            <th>Ammonia (ppm)</th>
+                            <th>Turbidity (NTU)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in readings %}
+                        <tr>
+                            <td>{{ r.createdAt }}</td>
+                            <td>{{ r.temperature }}</td>
+                            <td>{{ r.ph }}</td>
+                            <td>{{ r.ammonia }}</td>
+                            <td>{{ r.turbidity }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Sensor Trends chart -->
+            <h2>Sensor Trends</h2>
+            <div class="chart-wrapper">
+                <canvas id="sensorChart"></canvas>
+            </div>
+
+            <!-- Feeding control buttons -->
+            <div class="feed-buttons">
+                <button id="btnFeedOn" class="btn btn-feed-on" type="button">
+                    Manual Feed ON
+                </button>
+                <button id="btnFeedOff" class="btn btn-feed-off" type="button">
+                    Manual Feed OFF
+                </button>
+                <button id="btnAutoFeed" class="btn btn-auto" type="button">
+                    Set Automatic Feeding<br>
+                    <span>9:00 AM &amp; 4:00 PM</span>
+                </button>
+            </div>
+
+            <!-- Historical section (toggle) -->
+            <div id="historicalSection" style="display:none;">
+                <h2>Historical Sensor Data</h2>
+                <div class="table-wrapper">
+                    <table id="historicalTable">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Temperature (°C)</th>
+                                <th>pH</th>
+                                <th>Ammonia (ppm)</th>
+                                <th>Turbidity (NTU)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- filled by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Chart.js and JS logic -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Sensor Trends chart
+        const labels = {{ time_labels | tojson }};
+        const tempData = {{ temp_values | tojson }};
+        const phData = {{ ph_values | tojson }};
+        const ammoniaData = {{ ammonia_values | tojson }};
+        const turbidityData = {{ turbidity_values | tojson }};
+
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const sensorChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        data: tempData,
+                        borderColor: '#ff7043',
+                        backgroundColor: 'rgba(255,112,67,0.15)',
+                        tension: 0.3,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'pH',
+                        data: phData,
+                        borderColor: '#42a5f5',
+                        backgroundColor: 'rgba(66,165,245,0.15)',
+                        tension: 0.3,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'Ammonia (ppm)',
+                        data: ammoniaData,
+                        borderColor: '#66bb6a',
+                        backgroundColor: 'rgba(102,187,106,0.15)',
+                        tension: 0.3,
+                        pointRadius: 3
+                    },
+                    {
+                        label: 'Turbidity (NTU)',
+                        data: turbidityData,
+                        borderColor: '#ffca28',
+                        backgroundColor: 'rgba(255,202,40,0.15)',
+                        tension: 0.3,
+                        pointRadius: 3
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                    x: { title: { display: true, text: 'Time' } },
+                    y: { title: { display: true, text: 'Value' } }
+                }
+            }
+        });
+
+        // Make chart height reasonable on phones
+        function resizeChart() {
+            const canvas = document.getElementById('sensorChart');
+            if (window.innerWidth < 600) {
+                canvas.height = 260;
+            } else {
+                canvas.height = 140;
+            }
+            sensorChart.resize();
+        }
+        window.addEventListener('load', resizeChart);
+        window.addEventListener('resize', resizeChart);
+
+        // Toggle Historical Data
+        const btnHistorical = document.getElementById('btnHistorical');
+        const historicalSection = document.getElementById('historicalSection');
+        const historicalTableBody = document.querySelector('#historicalTable tbody');
+        let historicalLoaded = false;
+
+        btnHistorical.addEventListener('click', async () => {
+            if (historicalSection.style.display === 'none') {
+                historicalSection.style.display = 'block';
+                btnHistorical.classList.add('active');
+                btnHistorical.textContent = 'Hide Historical Data';
+
+                if (!historicalLoaded) {
+                    try {
+                        const res = await fetch('/historical');
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            historicalTableBody.innerHTML = '';
+                            data.readings.forEach(row => {
+                                const tr = document.createElement('tr');
+                                tr.innerHTML = `
+                                    <td>${row.createdAt}</td>
+                                    <td>${row.temperature}</td>
+                                    <td>${row.ph}</td>
+                                    <td>${row.ammonia}</td>
+                                    <td>${row.turbidity}</td>
+                                `;
+                                historicalTableBody.appendChild(tr);
+                            });
+                            historicalLoaded = true;
+                        }
+                    } catch (err) {
+                        console.error('Error loading historical data', err);
+                    }
+                }
+            } else {
+                historicalSection.style.display = 'none';
+                btnHistorical.classList.remove('active');
+                btnHistorical.textContent = 'View Historical Data';
+            }
+        });
+
+        // Feed buttons
+        async function postForm(url, formData) {
+            const res = await fetch(url, {
+                method: 'POST',
+                body: formData
+            });
+            return res.json();
+        }
+
+        document.getElementById('btnFeedOn').addEventListener('click', async () => {
+            const form = new FormData();
+            form.append('action', 'on');
+            try {
+                await postForm('/feed/manual', form);
+                alert('Manual Feed ON sent to feeder.');
+            } catch (e) {
+                alert('Failed to send Manual Feed ON.');
+            }
+        });
+
+        document.getElementById('btnFeedOff').addEventListener('click', async () => {
+            const form = new FormData();
+            form.append('action', 'off');
+            try {
+                await postForm('/feed/manual', form);
+                alert('Manual Feed OFF sent to feeder.');
+            } catch (e) {
+                alert('Failed to send Manual Feed OFF.');
+            }
+        });
+
+        document.getElementById('btnAutoFeed').addEventListener('click', async () => {
+            try {
+                const res = await fetch('/feed/schedule', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message || 'Automatic feeding schedule set.');
+            } catch (e) {
+                alert('Failed to set automatic feeding.');
+            }
+        });
+    </script>
+</body>
+</html>
