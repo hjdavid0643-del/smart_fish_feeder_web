@@ -15,6 +15,12 @@ app = Flask(__name__)
 app.secret_key = "AIzaSyAiR0kD9irw4heL4xtnoKSnkEONM8afDxw"
 CORS(app)
 
+from flask import redirect, url_for
+
+@app.route("/")
+def home():
+    return redirect(url_for("login"))
+
 # ---------- Firebase setup ----------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "firebasekey.json")
