@@ -118,6 +118,12 @@
         .btn-view:hover {
             background-color: #00897b;
         }
+        .btn-pdf {
+            background-color: #17a2b8;
+        }
+        .btn-pdf:hover {
+            background-color: #138496;
+        }
         .table-wrapper {
             width: 100%;
             overflow-x: auto;
@@ -175,6 +181,75 @@
         #historicalSection {
             margin-top: 6px;
         }
+        
+        /* MOSFET Motor Control Styles */
+        .motor-section {
+            background: rgba(0, 0, 0, 0.15);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .motor-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .btn-motor-on {
+            flex: 1;
+            min-width: 140px;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            padding: 12px 20px;
+        }
+        .btn-motor-on:hover {
+            background: linear-gradient(135deg, #218838, #1aa179);
+        }
+        .btn-motor-off {
+            flex: 1;
+            min-width: 140px;
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            padding: 12px 20px;
+        }
+        .btn-motor-off:hover {
+            background: linear-gradient(135deg, #c82333, #a71d2a);
+        }
+        .speed-control {
+            margin-bottom: 15px;
+        }
+        .speed-control label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .speed-slider {
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: linear-gradient(to right, #007bff, #0056b3);
+            outline: none;
+            cursor: pointer;
+            margin-bottom: 12px;
+        }
+        .btn-set-speed {
+            width: 100%;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            padding: 12px;
+        }
+        .btn-set-speed:hover {
+            background: linear-gradient(135deg, #0056b3, #004085);
+        }
+        .motor-status {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.15));
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .motor-status span {
+            color: #ffc107;
+        }
     </style>
 </head>
 <body>
@@ -187,10 +262,11 @@
 
         <!-- Main dashboard content -->
         <div class="container">
-            <h1>Smart Fish Feeder Dashboard</h1>
+            <h1>🐟 Smart Fish Feeder Dashboard</h1>
 
-            <!-- View Historical + Refresh -->
+            <!-- View Historical + PDF + Refresh -->
             <div class="top-buttons">
+                <a class="btn btn-pdf" href="/export_pdf" download>📥 Download PDF</a>
                 <button id="btnHistorical" class="btn btn-view" type="button">
                     View Historical Data
                 </button>
@@ -249,6 +325,34 @@
                     Set Automatic Feeding<br>
                     <span>9:00 AM &amp; 4:00 PM</span>
                 </button>
+            </div>
+
+            <!-- MOSFET Motor Control Section -->
+            <div class="motor-section">
+                <h2>🔌 Motor Control (MOSFET)</h2>
+                
+                <div class="motor-controls">
+                    <button class="btn btn-motor-on" onclick="motorControl('on')">
+                        ▶ Motor ON
+                    </button>
+                    <button class="btn btn-motor-off" onclick="motorControl('off')">
+                        ⏹ Motor OFF
+                    </button>
+                </div>
+                
+                <div class="speed-control">
+                    <label>Motor Speed: <span id="rpm-display">50</span>%</label>
+                    <input type="range" class="speed-slider" id="rpm-slider" min="0" max="100" value="50" 
+                           oninput="document.getElementById('rpm-display').textContent = this.value">
+                    <button class="btn btn-set-speed" onclick="setMotorSpeed()">
+                        ⚡ Set Speed
+                    </button>
+                </div>
+                
+                <div class="motor-status">
+                    Motor RPM: <span id="current-rpm">0</span>% | 
+                    Status: <span id="motor-status-text">OFF</span>
+                </div>
             </div>
 
             <!-- Historical section (toggle) -->
@@ -431,6 +535,70 @@
                 alert('Failed to set automatic feeding.');
             }
         });
+
+        // MOSFET Motor Control Functions
+        function motorControl(action) {
+            fetch('/control_motor', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: action})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    alert('✅ ' + data.message);
+                    loadMotorStatus();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('❌ Request failed: ' + error);
+            });
+        }
+
+        function setMotorSpeed() {
+            const rpm = document.getElementById('rpm-slider').value;
+            fetch('/control_motor', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'set_speed', rpm: rpm})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    alert('✅ ' + data.message);
+                    loadMotorStatus();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('❌ Request failed: ' + error);
+            });
+        }
+
+        function loadMotorStatus() {
+            fetch('/get_motor_status')
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    document.getElementById('current-rpm').textContent = data.motor_rpm;
+                    const statusSpan = document.getElementById('motor-status-text');
+                    statusSpan.textContent = data.motor_status.toUpperCase();
+                    statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load motor status:', error);
+            });
+        }
+
+        // Load motor status on page load and refresh every 5 seconds
+        loadMotorStatus();
+        setInterval(loadMotorStatus, 5000);
     </script>
 </body>
 </html>

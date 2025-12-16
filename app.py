@@ -291,6 +291,156 @@ def dashboard():
         turbidity_values=turbidity_values,
     )
 
+# ========== PDF EXPORT ==========
+
+@app.route("/export_pdf")
+@login_required
+def export_pdf():
+    """Generate PDF report with sensor readings"""
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+
+        readings_cursor = readings_ref.stream()
+        data = []
+        for r in readings_cursor:
+            doc = r.to_dict()
+            data.append({
+                "temperature": doc.get("temperature"),
+                "ph": doc.get("ph"),
+                "ammonia": doc.get("ammonia"),
+                "turbidity": doc.get("turbidity"),
+                "createdAt": doc.get("createdAt"),
+            })
+
+        data = list(reversed(data))
+
+        pdf_buffer = io.BytesIO()
+        doc_pdf = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+        elements = []
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            "CustomTitle",
+            parent=styles["Heading1"],
+            fontSize=20,
+            textColor=colors.HexColor("#1f77b4"),
+            alignment=1,
+            spaceAfter=20,
+        )
+        elements.append(Paragraph("🐟 Water Quality Monitoring Report", title_style))
+        elements.append(Paragraph(
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            styles["Normal"]
+        ))
+        elements.append(Spacer(1, 0.2 * inch))
+
+        table_data = [["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]]
+        for r in data:
+            created = r["createdAt"].strftime("%Y-%m-%d %H:%M:%S") if r["createdAt"] else ""
+            table_data.append([
+                created,
+                "" if r["temperature"] is None else f"{r['temperature']:.2f}",
+                "" if r["ph"] is None else f"{r['ph']:.2f}",
+                "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
+                "" if r["turbidity"] is None else f"{r['turbidity']:.2f}",
+            ])
+
+        table = Table(table_data, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, 0), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+        ]))
+
+        elements.append(Paragraph("Recent Sensor Readings", styles["Heading2"]))
+        elements.append(table)
+        doc_pdf.build(elements)
+        pdf_buffer.seek(0)
+
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"water_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ========== MOSFET MOTOR CONTROL ==========
+
+@app.route("/control_motor", methods=["POST"])
+@login_required
+def control_motor():
+    """Control motor RPM via MOSFET PWM"""
+    try:
+        data = request.get_json() or request.form
+        rpm = data.get("rpm")
+        action = data.get("action")
+        
+        if action == "off":
+            db.collection("devices").document("ESP32_001").set({
+                "motor_rpm": 0,
+                "motor_status": "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
+            
+        elif action == "on":
+            db.collection("devices").document("ESP32_001").set({
+                "motor_rpm": 50,
+                "motor_status": "on",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": "Motor turned ON at 50%"}), 200
+            
+        elif action == "set_speed" and rpm is not None:
+            rpm_value = int(rpm)
+            if rpm_value < 0 or rpm_value > 100:
+                return jsonify({"status": "error", "message": "RPM must be 0-100"}), 400
+            
+            db.collection("devices").document("ESP32_001").set({
+                "motor_rpm": rpm_value,
+                "motor_status": "on" if rpm_value > 0 else "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": f"Speed set to {rpm_value}%"}), 200
+        
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/get_motor_status", methods=["GET"])
+@login_required
+def get_motor_status():
+    """Get current motor RPM and status"""
+    try:
+        device_doc = db.collection("devices").document("ESP32_001").get()
+        if device_doc.exists:
+            data = device_doc.to_dict()
+            return jsonify({
+                "status": "success",
+                "motor_rpm": data.get("motor_rpm", 0),
+                "motor_status": data.get("motor_status", "off")
+            }), 200
+        return jsonify({"status": "success", "motor_rpm": 0, "motor_status": "off"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 
 # ---------- API routes ----------
 @app.route("/add_reading", methods=["POST"])

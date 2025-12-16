@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Download PDF Report</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      text-align: center;
+      background: rgba(144, 9, 159, 0.15);
+      padding: 50px;
+      border-radius: 15px;
+      box-shadow: 0 8px 30px rgba(93, 108, 214, 0.16);
+      backdrop-filter: blur(10px);
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 15px 40px;
+      background-color: #1ab562;
+      color: rgb(4, 43, 119);
+      text-decoration: none;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: bold;
+      transition: all 0.3s;
+      margin: 10px;
+    }
+    .btn:hover {
+      background-color: #0514ea;
+      transform: scale(1.05);
+    }
+    .btn-back {
+      background-color: #0980e9;
+    }
+    .btn-back:hover {
+      background-color: #1c5d90;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📄 Water Quality Report</h1>
+    <p>Download your sensor data as a PDF document</p>
+    
+    <a href="/export_pdf" class="btn" download>
+      📥 Download PDF Report
+    </a>
+    
+    <br><br>
+    
+    <a href="/dashboard" class="btn btn-back">
+      ← Back to Dashboard
+    </a>
+  </div>
+</body>
+</html>
