@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <title>Smart Fish Feeder Dashboard</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+<h2>Dashboard</h2>
+
+<h3>Status: <span style="color: {{ alert_color }}">{{ summary }}</span></h3>
+
+<h3>Latest Readings</h3>
+<table border="1">
+  <tr><th>Timestamp</th><th>Temperature</th><th>pH</th><th>Ammonia</th><th>Turbidity</th></tr>
+  {% for r in readings %}
+    <tr>
+      <td>{{ r['createdAt'] }}</td>
+      <td>{{ r['temperature'] }}</td>
+      <td>{{ r['ph'] }}</td>
+      <td>{{ r['ammonia'] }}</td>
+      <td>{{ r['turbidity'] }}</td>
+    </tr>
+  {% endfor %}
+</table>
+
+<h3>MOSFET Controls</h3>
+{% for mosfet in ['mosfet1','mosfet2'] %}
+<div>
+  <h4>{{ mosfet }}</h4>
+  <button onclick="controlMosfet('{{ mosfet }}','on')">ON</button>
+  <button onclick="controlMosfet('{{ mosfet }}','off')">OFF</button>
+
+  <form onsubmit="return scheduleMosfet('{{ mosfet }}');">
+    Schedule Time (HH:MM): <input type="time" id="time_{{ mosfet }}">
+    <button type="submit">Schedule</button>
+  </form>
+  <hr>
+</div>
+{% endfor %}
+
+<script>
+function controlMosfet(mosfet, action) {
+    $.post("/mosfet/" + mosfet + "/manual", {action: action}, function(resp){
+        alert(resp.message);
+    });
+}
+
+function scheduleMosfet(mosfet) {
+    const time = $("#time_" + mosfet).val();
+    if(!time) { alert("Select time"); return false; }
+    $.ajax({
+        url: "/mosfet/" + mosfet + "/schedule",
+        type: "POST",
+        contentType: "application/json",
+        data: JSON.stringify({action: "on", time: time}),
+        success: function(resp){ alert(resp.message); },
+        error: function(err){ alert(err.responseJSON.message); }
+    });
+    return false;
+}
+</script>
+
+</body>
+</html>

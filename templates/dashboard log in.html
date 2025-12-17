@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <style>
+        body{font-family:Arial;background:#f5f5f5;}          
+        table{border-collapse:collapse;width:100%;}
+        th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+        th{background:#2E86C1;color:white;}
+        .summary{padding:10px;margin-bottom:20px;}
+        .summary.green{background:#d4edda;color:#155724;}
+        .summary.red{background:#f8d7da;color:#721c24;}
+        .summary.orange{background:#fff3cd;color:#856404;}
+        form{margin:20px 0;}
+        input,button{padding:6px;margin:4px;}
+    </style>
+</head>
+<body>
+<h2>Dashboard</h2>
+<div class="summary {{ alert_color }}">{{ summary }}</div>
+
+<h3>Latest Readings</h3>
+<table>
+<tr><th>Time</th><th>Temp (°C)</th><th>pH</th><th>Ammonia</th><th>Turbidity</th></tr>
+{% for r in readings %}
+<tr>
+<td>{{ r.createdAt }}</td>
+<td>{{ r.temperature }}</td>
+<td>{{ r.ph }}</td>
+<td>{{ r.ammonia }}</td>
+<td>{{ r.turbidity }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>Generate Report</h3>
+<form action="/generate_report" method="post">
+    From: <input type="date" name="start" required>
+    To: <input type="date" name="end" required>
+    <button>Generate & Email PDF</button>
+</form>
+
+<p><a href="/change-password">Change Password</a> | <a href="/logout">Logout</a></p>
+</body>
+</html>

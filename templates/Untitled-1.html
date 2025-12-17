@@ -1,0 +1,14 @@
+<h1>Welcome {{ user.email }}</h1>
+<p>Role: {{ user.role }}</p>
+
+{% if user.role == "super_admin" %}
+<a href="/super-admin">Super Admin Control Panel</a><br>
+<a href="/create_user">Create User</a><br>
+{% endif %}
+
+{% if user.role == "admin" or user.role == "super_admin" %}
+<a href="/admin-panel">Admin Panel</a><br>
+{% endif %}
+
+<br>
+<a href="/logout">Logout</a>

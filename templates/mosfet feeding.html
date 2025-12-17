@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Smart Fish Feeder - Control Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            font-size: 28px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-card {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            margin-bottom: 20px;
+        }
+
+        .control-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 20px;
+            color: #fff;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .control-card h4 {
+            color: #fff;
+            margin: 15px 0 10px 0;
+            font-size: 16px;
+        }
+
+        .control-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            transition: all 0.3s;
+            color: white;
+            touch-action: manipulation;
+        }
+
+        .btn-on {
+            background: linear-gradient(135deg, #4caf50, #45a049);
+        }
+
+        .btn-on:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn-off {
+            background: linear-gradient(135deg, #f44336, #d32f2f);
+        }
+
+        .btn-off:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(244, 67, 54, 0.4);
+        }
+
+        .btn-add-schedule {
+            width: 100%;
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            color: white;
+            transition: all 0.3s;
+            touch-action: manipulation;
+        }
+
+        .btn-add-schedule.feeding {
+            background: linear-gradient(135deg, #4caf50, #388e3c);
+        }
+
+        .btn-add-schedule:active {
+            transform: scale(0.98);
+        }
+
+        .slider-container {
+            margin-bottom: 15px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .slider-header label {
+            font-size: 14px;
+            color: #fff;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .speed-badge {
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: bold;
+            font-size: 14px;
+            min-width: 50px;
+            text-align: center;
+            display: inline-block;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .speed-badge.feeding {
+            background: rgba(76, 175, 80, 0.9);
+        }
+
+        .speed-badge.pump {
+            background: rgba(33, 150, 243, 0.9);
+        }
+
+        .slider-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .slider-label {
+            color: #000;
+            font-size: 14px;
+            font-weight: 800;
+            min-width: 40px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 5px 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+        }
+
+        .slider-track {
+            position: relative;
+            flex: 1;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 6px;
+            overflow: visible;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .slider-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.05s ease;
+            pointer-events: none;
+        }
+
+        .slider-fill.feeding {
+            background: linear-gradient(90deg, #4caf50, #66bb6a);
+            box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);
+        }
+
+        .slider-fill.pump {
+            background: linear-gradient(90deg, #2196f3, #42a5f5);
+            box-shadow: 0 2px 4px rgba(33, 150, 243, 0.3);
+        }
+
+        .slider {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            width: 100%;
+            height: 12px;
+            background: transparent;
+            outline: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+            z-index: 2;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+            border: 3px solid #4caf50;
+            transition: all 0.2s;
+        }
+
+        .slider.pump::-webkit-slider-thumb {
+            border-color: #2196f3;
+        }
+
+        .slider::-webkit-slider-thumb:active {
+            transform: scale(1.3);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.6);
+        }
+
+        .slider::-moz-range-thumb {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+            border: 3px solid #4caf50;
+            transition: all 0.2s;
+        }
+
+        .slider.pump::-moz-range-thumb {
+            border-color: #2196f3;
+        }
+
+        .status-display {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 14px;
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .schedule-divider {
+            height: 2px;
+            background: rgba(255, 255, 255, 0.2);
+            margin: 15px 0;
+        }
+
+        .schedule-list {
+            margin-bottom: 15px;
+        }
+
+        .schedule-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .schedule-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .schedule-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .schedule-toggle {
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .schedule-toggle.feeding {
+            background: #4caf50;
+        }
+
+        .schedule-toggle.pump {
+            background: #2196f3;
+        }
+
+        .schedule-toggle.disabled {
+            background: #f44336;
+        }
+
+        .schedule-info {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.9);
+            line-height: 1.6;
+        }
+
+        .schedule-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .btn-edit, .btn-delete {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .btn-edit {
+            background: #2196f3;
+            flex: 1;
+        }
+
+        .btn-edit:active {
+            transform: scale(0.95);
+        }
+
+        .btn-delete {
+            background: #f44336;
+        }
+
+        .btn-delete:active {
+            transform: scale(0.95);
+        }
+
+        .new-schedule-form {
+            margin-top: 15px;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+            }
+            to {
+                opacity: 1;
+                max-height: 800px;
+            }
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .text-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            font-size: 15px;
+            color: #333;
+            font-weight: 600;
+            box-sizing: border-box;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: #2196f3;
+            box-shadow: 0 0 10px rgba(33, 150, 243, 0.4);
+        }
+
+        .days-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .day-btn {
+            flex: 1;
+            min-width: 45px;
+            padding: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.6);
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+
+        .day-btn.active.feeding {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+
+        .day-btn.active.pump {
+            background: #2196f3;
+            border-color: #2196f3;
+            color: white;
+        }
+
+        .form-actions {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn-cancel {
+            background: linear-gradient(135deg, #9e9e9e, #757575);
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            color: white;
+        }
+
+        .btn-save-schedule {
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            color: white;
+        }
+
+        .btn-save-schedule.feeding {
+            background: linear-gradient(135deg, #4caf50, #388e3c);
+        }
+
+        .btn-save-schedule.pump {
+            background: linear-gradient(135deg, #2196f3, #1976d2);
+        }
+
+        .time-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .time-input-group {
+            margin-bottom: 0;
+        }
+
+        .time-input-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .time-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            font-size: 16px;
+            color: #333;
+            font-weight: 600;
+            box-sizing: border-box;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+
+            h1 {
+                font-size: 24px;
+                margin-bottom: 20px;
+            }
+
+            .control-card {
+                padding: 18px;
+            }
+
+            .btn {
+                font-size: 14px;
+                padding: 16px;
+            }
+
+            .day-btn {
+                min-width: 40px;
+                padding: 8px;
+                font-size: 12px;
+            }
+
+            .form-actions {
+                grid-template-columns: 1fr;
+            }
+
+            .slider-label {
+                font-size: 12px;
+                min-width: 35px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐟 Smart Fish Feeder Control Panel</h1>
+
+        <!-- ========== FEEDING CONTROL ========== -->
+        <div class="control-card">
+            <h3>🍽️ Feeding Control</h3>
+            
+            <!-- Manual On/Off Buttons -->
+            <div class="control-buttons">
+                <button class="btn btn-on" onclick="controlFeeding('on')">Feed ON</button>
+                <button class="btn btn-off" onclick="controlFeeding('off')">Feed OFF</button>
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="slider-container">
+                <div class="slider-header">
+                    <label>Feed Speed:</label>
+                    <span id="feedSpeedDisplay" class="speed-badge feeding">50%</span>
+                </div>
+                <div class="slider-wrapper">
+                    <span class="slider-label">0%</span>
+                    <div class="slider-track">
+                        <div class="slider-fill feeding" id="feedSliderFill" style="width: 50%"></div>
+                        <input type="range" min="0" max="100" value="50" class="slider feeding" 
+                               id="feedSpeedSlider" oninput="updateFeedSpeed(this.value)">
+                    </div>
+                    <span class="slider-label">100%</span>
+                </div>
+            </div>
+
+            <!-- Status Display -->
+            <div class="status-display" id="feedStatus">Status: OFF | Speed: 0%</div>
+
+            <!-- Divider -->
+            <div class="schedule-divider"></div>
+
+            <!-- Automated Schedule Section -->
+            <h4>⏰ Automated Schedules</h4>
+            
+            <!-- Schedule List -->
+            <div id="feedScheduleList" class="schedule-list"></div>
+
+            <!-- Add New Schedule Button -->
+            <button class="btn btn-add-schedule feeding" onclick="toggleFeedScheduleForm()">
+                ➕ Add New Schedule
+            </button>
+
+            <!-- New Schedule Form -->
+            <div id="newFeedScheduleForm" class="new-schedule-form" style="display: none;">
+                <div class="schedule-divider"></div>
+                
+                <div class="form-group">
+                    <label>Schedule Name:</label>
+                    <input type="text" id="feedScheduleName" placeholder="e.g., Morning Feed" class="text-input">
+                </div>
+
+                <div class="time-row">
+                    <div class="time-input-group">
+                        <label>Start Time:</label>
+                        <input type="time" id="feedScheduleStartTime" value="09:00" class="time-input">
+                    </div>
+                    <div class="time-input-group">
+                        <label>End Time:</label>
+                        <input type="time" id="feedScheduleEndTime" value="09:05" class="time-input">
+                    </div>
+                </div>
+
+                <div class="slider-container">
+                    <div class="slider-header">
+                        <label>Feed Speed:</label>
+                        <span id="feedSchedulePowerDisplay" class="speed-badge feeding">75%</span>
+                    </div>
+                    <div class="slider-wrapper">
+                        <span class="slider-label">0%</span>
+                        <div class="slider-track">
+                            <div class="slider-fill feeding" id="feedSchedulePowerFill" style="width: 75%"></div>
+                            <input type="range" min="0" max="100" value="75" class="slider feeding" 
+                                   id="feedSchedulePower" oninput="updateFeedSchedulePower(this.value)">
+                        </div>
+                        <span class="slider-label">100%</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Repeat Days:</label>
+                    <div class="days-selector" id="feedDaysSelector">
+                        <button type="button" class="day-btn active feeding" data-day="Mon">Mon</button>
+                        <button type="button" class="day-btn active feeding" data-day="Tue">Tue</button>
+                        <button type="button" class="day-btn active feeding" data-day="Wed">Wed</button>
+                        <button type="button" class="day-btn active feeding" data-day="Thu">Thu</button>
+                        <button type="button" class="day-btn active feeding" data-day="Fri">Fri</button>
+                        <button type="button" class="day-btn active feeding" data-day="Sat">Sat</button>
+                        <button type="button" class="day-btn active feeding" data-day="Sun">Sun</button>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-save-schedule feeding" onclick="saveFeedSchedule()">✅ Save Schedule</button>
+                    <button class="btn-cancel" onclick="toggleFeedScheduleForm()">❌ Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== WATER PUMP CONTROL ========== -->
+        <div class="control-card">
+            <h3>💧 Water Pump Control</h3>
+            
+            <!-- Manual On/Off Buttons -->
+            <div class="control-buttons">
+                <button class="btn btn-on" onclick="controlPump('on')">Pump ON</button>
+                <button class="btn btn-off" onclick="controlPump('off')">Pump OFF</button>
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="slider-container">
+                <div class="slider-header">
+                    <label>Pump Speed:</label>
+                    <span id="pumpSpeedDisplay" class="speed-badge pump">50%</span>
+                </div>
+                <div class="slider-wrapper">
+                    <span class="slider-label">0%</span>
+                    <div class="slider-track">
+                        <div class="slider-fill pump" id="pumpSliderFill" style="width: 50%"></div>
+                        <input type="range" min="0" max="100" value="50" class="slider pump" 
+                               id="pumpSpeedSlider" oninput="updatePumpSpeed(this.value)">
+                    </div>
+                    <span class="slider-label">100%</span>
+                </div>
+            </div>
+
+            <!-- Status Display -->
+            <div class="status-display" id="pumpStatus">Status: OFF | Speed: 0%</div>
+
+            <!-- Divider -->
+            <div class="schedule-divider"></div>
+
+            <!-- Automated Schedule Section -->
+            <h4>⏰ Automated Schedules</h4>
+            
+            <!-- Schedule List -->
+            <div id="pumpScheduleList" class="schedule-list"></div>
+
+            <!-- Add New Schedule Button -->
+            <button class="btn btn-add-schedule" onclick="togglePumpScheduleForm()">
+                ➕ Add New Schedule
+            </button>
+
+            <!-- New Schedule Form -->
+            <div id="newPumpScheduleForm" class="new-schedule-form" style="display: none;">
+                <div class="schedule-divider"></div>
+                
+                <div class="form-group">
+                    <label>Schedule Name:</label>
+                    <input type="text" id="pumpScheduleName" placeholder="e.g., Morning Circulation" class="text-input">
+                </div>
+
+                <div class="time-row">
+                    <div class="time-input-group">
+                        <label>Start Time:</label>
+                        <input type="time" id="pumpScheduleStartTime" value="08:00" class="time-input">
+                    </div>
+                    <div class="time-input-group">
+                        <label>End Time:</label>
+                        <input type="time" id="pumpScheduleEndTime" value="10:00" class="time-input">
+                    </div>
+                </div>
+
+                <div class="slider-container">
+                    <div class="slider-header">
+                        <label>Pump Speed:</label>
+                        <span id="pumpSchedulePowerDisplay" class="speed-badge pump">75%</span>
+                    </div>
+                    <div class="slider-wrapper">
+                        <span class="slider-label">0%</span>
+                        <div class="slider-track">
+                            <div class="slider-fill pump" id="pumpSchedulePowerFill" style="width: 75%"></div>
+                            <input type="range" min="0" max="100" value="75" class="slider pump" 
+                                   id="pumpSchedulePower" oninput="updatePumpSchedulePower(this.value)">
+                        </div>
+                        <span class="slider-label">100%</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Repeat Days:</label>
+                    <div class="days-selector" id="pumpDaysSelector">
+                        <button type="button" class="day-btn active pump" data-day="Mon">Mon</button>
+                        <button type="button" class="day-btn active pump" data-day="Tue">Tue</button>
+                        <button type="button" class="day-btn active pump" data-day="Wed">Wed</button>
+                        <button type="button" class="day-btn active pump" data-day="Thu">Thu</button>
+                        <button type="button" class="day-btn active pump" data-day="Fri">Fri</button>
+                        <button type="button" class="day-btn active pump" data-day="Sat">Sat</button>
+                        <button type="button" class="day-btn active pump" data-day="Sun">Sun</button>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button class="btn-save-schedule pump" onclick="savePumpSchedule()">✅ Save Schedule</button>
+                    <button class="btn-cancel" onclick="togglePumpScheduleForm()">❌ Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== JAVASCRIPT ========== -->
+    <script>
+        let feedSchedules = [];
+        let pumpSchedules = [];
+
+        // ========== FEEDING CONTROL ==========
+        async function controlFeeding(action) {
+            try {
+                const res = await fetch('/control_feeding', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action})
+                });
+                const data = await res.json();
+                alert(data.message);
+                loadFeedingStatus();
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to control feeding');
+            }
+        }
+
+        function updateFeedSpeed(value) {
+            document.getElementById('feedSpeedDisplay').textContent = value + '%';
+            document.getElementById('feedSliderFill').style.width = value + '%';
+        }
+
+        async function setFeedSpeed() {
+            const speed = document.getElementById('feedSpeedSlider').value;
+            try {
+                const res = await fetch('/control_feeding', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'set_speed', speed: parseInt(speed)})
+                });
+                await res.json();
+                loadFeedingStatus();
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        async function loadFeedingStatus() {
+            try {
+                const res = await fetch('/get_feeding_status');
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('feedStatus').textContent = 
+                        `Status: ${data.feed_status.toUpperCase()} | Speed: ${data.feed_speed}%`;
+                    
+                    document.getElementById('feedSpeedSlider').value = data.feed_speed;
+                    updateFeedSpeed(data.feed_speed);
+                }
+            } catch (e) {
+                console.error('Failed to load feeding status:', e);
+            }
+        }
+
+        // ========== PUMP CONTROL ==========
+        async function controlPump(action) {
+            try {
+                const res = await fetch('/control_pump', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action})
+                });
+                const data = await res.json();
+                alert(data.message);
+                loadPumpStatus();
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to control pump');
+            }
+        }
+
+        function updatePumpSpeed(value) {
+            document.getElementById('pumpSpeedDisplay').textContent = value + '%';
+            document.getElementById('pumpSliderFill').style.width = value + '%';
+        }
+
+        async function setPumpSpeed() {
+            const speed = document.getElementById('pumpSpeedSlider').value;
+            try {
+                const res = await fetch('/control_pump', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({action: 'set_speed', speed: parseInt(speed)})
+                });
+                await res.json();
+                loadPumpStatus();
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        async function loadPumpStatus() {
+            try {
+                const res = await fetch('/get_pump_status');
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('pumpStatus').textContent = 
+                        `Status: ${data.pump_status.toUpperCase()} | Speed: ${data.pump_speed}%`;
+                    
+                    document.getElementById('pumpSpeedSlider').value = data.pump_speed;
+                    updatePumpSpeed(data.pump_speed);
+                }
+            } catch (e) {
+                console.error('Failed to load pump status:', e);
+            }
+        }
+
+        // ========== FEEDING SCHEDULE ==========
+        function toggleFeedScheduleForm() {
+            const form = document.getElementById('newFeedScheduleForm');
+            const btn = event.target;
+            
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                btn.textContent = '➖ Cancel';
+            } else {
+                form.style.display = 'none';
+                btn.textContent = '➕ Add New Schedule';
+                resetFeedForm();
+            }
+        }
+
+        function resetFeedForm() {
+            document.getElementById('feedScheduleName').value = '';
+            document.getElementById('feedScheduleStartTime').value = '09:00';
+            document.getElementById('feedScheduleEndTime').value = '09:05';
+            document.getElementById('feedSchedulePower').value = 75;
+            updateFeedSchedulePower(75);
+            
+            document.querySelectorAll('#feedDaysSelector .day-btn').forEach(btn => {
+                btn.classList.add('active');
+            });
+        }
+
+        function updateFeedSchedulePower(value) {
+            document.getElementById('feedSchedulePowerDisplay').textContent = value + '%';
+            document.getElementById('feedSchedulePowerFill').style.width = value + '%';
+        }
+
+        async function saveFeedSchedule() {
+            const name = document.getElementById('feedScheduleName').value;
+            const startTime = document.getElementById('feedScheduleStartTime').value;
+            const endTime = document.getElementById('feedScheduleEndTime').value;
+            const power = document.getElementById('feedSchedulePower').value;
+            
+            const days = Array.from(document.querySelectorAll('#feedDaysSelector .day-btn.active'))
+                .map(btn => btn.getAttribute('data-day'));
+
+            if (!name || !startTime || !endTime) {
+                alert('⚠️ Please fill all fields');
+                return;
+            }
+
+            if (days.length === 0) {
+                alert('⚠️ Please select at least one day');
+                return;
+            }
+
+            const scheduleData = {
+                name, action: 'feeding', startTime, endTime,
+                power: parseInt(power), days, enabled: true
+            };
+
+            try {
+                const res = await fetch('/feed_schedule/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(scheduleData)
+                });
+
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert('✅ Feed schedule saved!');
+                    loadFeedSchedules();
+                    toggleFeedScheduleForm();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to save schedule');
+            }
+        }
+
+        async function loadFeedSchedules() {
+            try {
+                const res = await fetch('/feed_schedule/list');
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    feedSchedules = data.schedules || [];
+                    renderFeedSchedules();
+                }
+            } catch (e) {
+                console.error('Failed to load schedules:', e);
+            }
+        }
+
+        function renderFeedSchedules() {
+            const container = document.getElementById('feedScheduleList');
+            
+            if (feedSchedules.length === 0) {
+                container.innerHTML = '<div class="empty-state">📭 No feed schedules yet</div>';
+                return;
+            }
+
+            container.innerHTML = feedSchedules.map((schedule, index) => `
+                <div class="schedule-item">
+                    <div class="schedule-header">
+                        <span class="schedule-name">🍽️ ${schedule.name}</span>
+                        <button class="schedule-toggle feeding ${schedule.enabled ? '' : 'disabled'}" 
+                                onclick="toggleFeedScheduleStatus(${index})">
+                            ${schedule.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+                    </div>
+                    <div class="schedule-info">
+                        <div>🕐 Time: ${schedule.startTime} - ${schedule.endTime}</div>
+                        <div>⚡ Speed: ${schedule.power}%</div>
+                        <div>📅 Days: ${schedule.days.join(', ')}</div>
+                    </div>
+                    <div class="schedule-actions">
+                        <button class="btn-edit" onclick="editFeedSchedule(${index})">✏️ Edit</button>
+                        <button class="btn-delete" onclick="deleteFeedSchedule(${index})">🗑️ Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function toggleFeedScheduleStatus(index) {
+            feedSchedules[index].enabled = !feedSchedules[index].enabled;
+            
+            try {
+                await fetch('/feed_schedule/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(feedSchedules[index])
+                });
+                renderFeedSchedules();
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        async function deleteFeedSchedule(index) {
+            if (!confirm('🗑️ Delete this feed schedule?')) return;
+            
+            try {
+                const res = await fetch('/feed_schedule/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: feedSchedules[index].id})
+                });
+                
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ Schedule deleted');
+                    loadFeedSchedules();
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to delete schedule');
+            }
+        }
+
+        function editFeedSchedule(index) {
+            alert('✏️ Edit feature coming soon!');
+        }
+
+        // ========== PUMP SCHEDULE ==========
+        function togglePumpScheduleForm() {
+            const form = document.getElementById('newPumpScheduleForm');
+            const btn = event.target;
+            
+            if (form.style.display === 'none') {
+                form.style.display = 'block';
+                btn.textContent = '➖ Cancel';
+            } else {
+                form.style.display = 'none';
+                btn.textContent = '➕ Add New Schedule';
+                resetPumpForm();
+            }
+        }
+
+        function resetPumpForm() {
+            document.getElementById('pumpScheduleName').value = '';
+            document.getElementById('pumpScheduleStartTime').value = '08:00';
+            document.getElementById('pumpScheduleEndTime').value = '10:00';
+            document.getElementById('pumpSchedulePower').value = 75;
+            updatePumpSchedulePower(75);
+            
+            document.querySelectorAll('#pumpDaysSelector .day-btn').forEach(btn => {
+                btn.classList.add('active');
+            });
+        }
+
+        function updatePumpSchedulePower(value) {
+            document.getElementById('pumpSchedulePowerDisplay').textContent = value + '%';
+            document.getElementById('pumpSchedulePowerFill').style.width = value + '%';
+        }
+
+        async function savePumpSchedule() {
+            const name = document.getElementById('pumpScheduleName').value;
+            const startTime = document.getElementById('pumpScheduleStartTime').value;
+            const endTime = document.getElementById('pumpScheduleEndTime').value;
+            const power = document.getElementById('pumpSchedulePower').value;
+            
+            const days = Array.from(document.querySelectorAll('#pumpDaysSelector .day-btn.active'))
+                .map(btn => btn.getAttribute('data-day'));
+
+            if (!name || !startTime || !endTime) {
+                alert('⚠️ Please fill all fields');
+                return;
+            }
+
+            if (days.length === 0) {
+                alert('⚠️ Please select at least one day');
+                return;
+            }
+
+            const scheduleData = {
+                name, action: 'pump', startTime, endTime,
+                power: parseInt(power), days, enabled: true
+            };
+
+            try {
+                const res = await fetch('/pump_schedule/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(scheduleData)
+                });
+
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert('✅ Pump schedule saved!');
+                    loadPumpSchedules();
+                    togglePumpScheduleForm();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to save schedule');
+            }
+        }
+
+        async function loadPumpSchedules() {
+            try {
+                const res = await fetch('/pump_schedule/list');
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    pumpSchedules = data.schedules || [];
+                    renderPumpSchedules();
+                }
+            } catch (e) {
+                console.error('Failed to load schedules:', e);
+            }
+        }
+
+        function renderPumpSchedules() {
+            const container = document.getElementById('pumpScheduleList');
+            
+            if (pumpSchedules.length === 0) {
+                container.innerHTML = '<div class="empty-state">📭 No pump schedules yet</div>';
+                return;
+            }
+
+            container.innerHTML = pumpSchedules.map((schedule, index) => `
+                <div class="schedule-item">
+                    <div class="schedule-header">
+                        <span class="schedule-name">💧 ${schedule.name}</span>
+                        <button class="schedule-toggle pump ${schedule.enabled ? '' : 'disabled'}" 
+                                onclick="togglePumpScheduleStatus(${index})">
+                            ${schedule.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+                    </div>
+                    <div class="schedule-info">
+                        <div>🕐 Time: ${schedule.startTime} - ${schedule.endTime}</div>
+                        <div>⚡ Speed: ${schedule.power}%</div>
+                        <div>📅 Days: ${schedule.days.join(', ')}</div>
+                    </div>
+                    <div class="schedule-actions">
+                        <button class="btn-edit" onclick="editPumpSchedule(${index})">✏️ Edit</button>
+                        <button class="btn-delete" onclick="deletePumpSchedule(${index})">🗑️ Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function togglePumpScheduleStatus(index) {
+            pumpSchedules[index].enabled = !pumpSchedules[index].enabled;
+            
+            try {
+                await fetch('/pump_schedule/update', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(pumpSchedules[index])
+                });
+                renderPumpSchedules();
+            } catch (e) {
+                console.error('Error:', e);
+            }
+        }
+
+        async function deletePumpSchedule(index) {
+            if (!confirm('🗑️ Delete this pump schedule?')) return;
+            
+            try {
+                const res = await fetch('/pump_schedule/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: pumpSchedules[index].id})
+                });
+                
+                const data = await res.json();
+                if (data.status === 'success') {
+                    alert('✅ Schedule deleted');
+                    loadPumpSchedules();
+                }
+            } catch (e) {
+                console.error('Error:', e);
+                alert('❌ Failed to delete schedule');
+            }
+        }
+
+        function editPumpSchedule(index) {
+            alert('✏️ Edit feature coming soon!');
+        }
+
+        // ========== DAY SELECTOR EVENTS ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.day-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                });
+            });
+            
+            // Slider events
+            document.getElementById('feedSpeedSlider').addEventListener('mouseup', setFeedSpeed);
+            document.getElementById('feedSpeedSlider').addEventListener('touchend', setFeedSpeed);
+            document.getElementById('pumpSpeedSlider').addEventListener('mouseup', setPumpSpeed);
+            document.getElementById('pumpSpeedSlider').addEventListener('touchend', setPumpSpeed);
+            
+            // Load initial data
+            loadFeedingStatus();
+            loadPumpStatus();
+            loadFeedSchedules();
+            loadPumpSchedules();
+        });
+
+        // ========== AUTO-REFRESH ==========
+        setInterval(() => {
+            loadFeedingStatus();
+            loadPumpStatus();
+            if (document.getElementById('newFeedScheduleForm').style.display === 'none') {
+                loadFeedSchedules();
+            }
+            if (document.getElementById('newPumpScheduleForm').style.display === 'none') {
+                loadPumpSchedules();
+            }
+        }, 3000);
+    </script>
+</body>
+</html>

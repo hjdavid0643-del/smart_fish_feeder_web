@@ -1,0 +1,61 @@
+<!-- MOSFET Control Panel -->
+<h2>MOSFET Control Panel</h2>
+
+<div>
+  <button onclick="sendCommand('mosfet1','ON')">Turn ON Feeder</button>
+  <button onclick="sendCommand('mosfet1','OFF')">Turn OFF Feeder</button>
+</div>
+
+<script>
+function sendCommand(pin, state) {
+  fetch("/mosfet/control", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      device_id: "{{ device_id }}",
+      pin: pin,
+      command: state
+    })
+  })
+  .then(res => res.json())
+  .then(data => alert(data.message || JSON.stringify(data)))
+  .catch(err => alert("Error: "+err));
+}
+</script>
+
+<hr>
+
+<!-- Schedule form -->
+<h2>Auto ON/OFF Schedule</h2>
+<label>Turn ON Time: <input type="time" id="on_time"></label>
+<label>Turn OFF Time: <input type="time" id="off_time"></label>
+<label>Repeat:
+  <select id="repeat">
+    <option value="daily">Daily</option>
+    <option value="weekly">Weekly</option>
+    <option value="once">Once</option>
+  </select>
+</label>
+<button onclick="sendSchedule()">Save Schedule</button>
+
+<script>
+function sendSchedule() {
+  const on_time = document.getElementById('on_time').value;
+  const off_time = document.getElementById('off_time').value;
+  const repeat = document.getElementById('repeat').value;
+  fetch("/mosfet/schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      device_id: "{{ device_id }}",
+      pin: "mosfet1",
+      on_time: on_time,
+      off_time: off_time,
+      repeat: repeat
+    })
+  })
+  .then(res => res.json())
+  .then(data => alert(data.message || JSON.stringify(data)))
+  .catch(err => alert("Error: "+err));
+}
+</script>

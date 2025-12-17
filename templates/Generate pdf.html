@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial; }
+        h2 { color:#2E86C1; }
+        .chart { width:100%; margin-bottom:20px; }
+    </style>
+</head>
+<body>
+
+<h2>📊 IoT System Report</h2>
+<p>Date Range: {{ start }} → {{ end }}</p>
+<hr>
+
+<h3>Sensor Data Summary</h3>
+<table border="1" cellpadding="6">
+<tr><th>Date</th><th>Temperature</th><th>pH</th><th>Oxygen</th></tr>
+
+{% for item in records %}
+<tr>
+  <td>{{ item.date }}</td>
+  <td>{{ item.temp }}</td>
+  <td>{{ item.ph }}</td>
+  <td>{{ item.ammonia }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<br>
+<h3>Charts</h3>
+<img src="{{ chart1 }}" class="chart">
+<img src="{{ chart2 }}" class="chart">
+
+</body>
+</html>

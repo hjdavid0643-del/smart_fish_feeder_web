@@ -1,0 +1,34 @@
+<h2>Auto ON/OFF Schedule</h2>
+
+<label>Turn ON Time:</label>
+<input type="time" id="on_time">
+
+<label>Turn OFF Time:</label>
+<input type="time" id="off_time">
+
+<label>Repeat:</label>
+<select id="repeat">
+    <option value="daily">Daily</option>
+    <option value="weekly">Weekly</option>
+    <option value="once">Once</option>
+</select>
+
+<button onclick="sendSchedule()">Save Schedule</button>
+
+<script>
+function sendSchedule() {
+    fetch("/mosfet/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            device_id: "ESP32_001",
+            pin: "mosfet1",
+            on_time: document.getElementById("on_time").value,
+            off_time: document.getElementById("off_time").value,
+            repeat: document.getElementById("repeat").value
+        })
+    })
+    .then(res => res.json())
+    .then(data => alert(data.message));
+}
+</script>

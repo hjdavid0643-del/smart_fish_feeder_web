@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Smart Fish Feeder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <header class="bg-blue-600 text-white p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Smart Fish Feeder Dashboard</h1>
+        <a href="{{ url_for('logout') }}" class="bg-red-500 px-4 py-2 rounded hover:bg-red-600">Logout</a>
+    </header>
+
+    <main class="p-6 max-w-6xl mx-auto">
+        <div id="summary" class="p-4 rounded text-white mb-6 {{ alert_color == 'green' and 'bg-green-600' or alert_color == 'orange' and 'bg-orange-500' or alert_color == 'red' and 'bg-red-600' }}">
+            {{ summary }}
+        </div>
+
+        <h2 class="text-xl font-bold mb-2">Recent Readings</h2>
+        <div class="overflow-x-auto bg-white rounded shadow mb-6">
+            <table class="min-w-full table-auto">
+                <thead class="bg-blue-600 text-white">
+                    <tr>
+                        <th class="px-4 py-2">Timestamp</th>
+                        <th class="px-4 py-2">Temperature (°C)</th>
+                        <th class="px-4 py-2">pH</th>
+                        <th class="px-4 py-2">Ammonia (ppm)</th>
+                        <th class="px-4 py-2">Turbidity (NTU)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in readings %}
+                    <tr class="text-center border-b">
+                        <td class="px-4 py-2">{{ r.createdAt }}</td>
+                        <td class="px-4 py-2">{{ r.temperature }}</td>
+                        <td class="px-4 py-2">{{ r.ph }}</td>
+                        <td class="px-4 py-2">{{ r.ammonia }}</td>
+                        <td class="px-4 py-2">{{ r.turbidity }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex justify-center gap-4">
+            <button onclick="manualFeed('on')" class="bg-green-600 px-6 py-2 rounded text-white hover:bg-green-700">Manual Feed ON</button>
+            <button onclick="manualFeed('off')" class="bg-red-600 px-6 py-2 rounded text-white hover:bg-red-700">Manual Feed OFF</button>
+        </div>
+    </main>
+
+<script>
+function updateSummaryColor(summaryText) {
+    const summaryDiv = document.getElementById('summary');
+    summaryDiv.innerText = summaryText;
+    summaryText = summaryText.toLowerCase();
+    if (summaryText.includes("temperature") || summaryText.includes("ammonia")) summaryDiv.className = "p-4 rounded text-white bg-red-600 mb-6";
+    else if (summaryText.includes("ph") || summaryText.includes("cloudy")) summaryDiv.className = "p-4 rounded text-white bg-orange-500 mb-6";
+    else summaryDiv.className = "p-4 rounded text-white bg-green-600 mb-6";
+}
+
+function manualFeed(action) {
+    fetch('/feed/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'action=' + action
+    })
+    .then(res => res.json())
+    .then(data => alert(data.message))
+    .catch(err => alert('Error: ' + err));
+}
+
+async function fetchReadings() {
+    try {
+        const response = await fetch('/historical');
+        const result = await response.json();
+        if (result.status === "success") {
+            const readings = result.readings.slice(-10);
+            const tbody = document.querySelector("tbody");
+            tbody.innerHTML = "";
+            let summary = "All systems normal.";
+            readings.forEach(r => {
+                const tr = document.createElement("tr");
+                tr.className = "text-center border-b";
+                tr.innerHTML = `
+                    <td class="px-4 py-2">${r.createdAt}</td>
+                    <td class="px-4 py-2">${r.temperature}</td>
+                    <td class="px-4 py-2">${r.ph}</td>
+                    <td class="px-4 py-2">${r.ammonia}</td>
+                    <td class="px-4 py-2">${r.turbidity}</td>
+                `;
+                tbody.prepend(tr);
+
+                if (r.temperature > 30 || r.temperature < 20) summary = "Temperature out of range!";
+                else if (r.ph < 6.5 || r.ph > 8.5) summary = "pH level is abnormal!";
+                else if (r.ammonia > 0.5) summary = "High ammonia detected!";
+                else if (r.turbidity > 50) summary = "Water is too cloudy!";
+            });
+            updateSummaryColor(summary);
+        }
+    } catch (err) {
+        console.error("Error fetching readings:", err);
+    }
+}
+
+fetchReadings();
+setInterval(fetchReadings, 30000);
+</script>
+</body>
+</html>

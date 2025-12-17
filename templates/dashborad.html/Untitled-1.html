@@ -1,0 +1,13 @@
+<h2>Login Success — Role: {{user.role}}</h2>
+
+{% if user.role=="super_admin" %}
+<a href="/super-admin">Super Admin Panel</a><br>
+<a href="/manage-users">Manage Users</a><br>
+{% endif %}
+
+{% if user.role in ["admin","super_admin"] %}
+<a href="/admin">Admin Dashboard</a><br>
+{% endif %}
+
+<a href="/worker">Fish Worker Dashboard</a><br>
+<a href="/logout">Logout</a>

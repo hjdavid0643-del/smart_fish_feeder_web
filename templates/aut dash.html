@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Fish Feeder Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background: #0077b6;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { margin: 0; }
+        header a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            background: #e63946;
+            border-radius: 5px;
+        }
+        .container {
+            padding: 2rem;
+            max-width: 900px;
+            margin: auto;
+        }
+        h2 { margin-top: 0; }
+        .summary {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            color: white;
+        }
+        .summary.green { background-color: #2a9d8f; }
+        .summary.orange { background-color: #f4a261; }
+        .summary.red { background-color: #e63946; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 0.75rem;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+        }
+        th { background-color: #0077b6; color: white; }
+        tr:last-child td { border-bottom: none; }
+        .feeding-controls {
+            margin-top: 2rem;
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
+        .feeding-controls button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            color: white;
+            font-size: 1rem;
+        }
+        .on { background-color: #2a9d8f; }
+        .off { background-color: #e63946; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Smart Fish Feeder Dashboard</h1>
+    <a href="{{ url_for('logout') }}">Logout</a>
+</header>
+
+<div class="container">
+    <div class="summary green" id="summary">
+        {{ summary }}
+    </div>
+
+    <h2>Recent Readings</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Temperature (°C)</th>
+                <th>pH</th>
+                <th>Ammonia (ppm)</th>
+                <th>Turbidity (NTU)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in readings %}
+            <tr>
+                <td>{{ r.createdAt }}</td>
+                <td>{{ r.temperature }}</td>
+                <td>{{ r.ph }}</td>
+                <td>{{ r.ammonia }}</td>
+                <td>{{ r.turbidity }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="feeding-controls">
+        <button class="on" onclick="manualFeed('on')">Manual Feed ON</button>
+        <button class="off" onclick="manualFeed('off')">Manual Feed OFF</button>
+    </div>
+</div>
+
+<script>
+    function updateSummaryColor(summaryText) {
+        const summaryDiv = document.getElementById('summary');
+        summaryDiv.innerText = summaryText;
+        summaryText = summaryText.toLowerCase();
+        if (summaryText.includes("temperature") || summaryText.includes("ammonia")) summaryDiv.className = "summary red";
+        else if (summaryText.includes("ph") || summaryText.includes("cloudy")) summaryDiv.className = "summary orange";
+        else summaryDiv.className = "summary green";
+    }
+
+    function manualFeed(action) {
+        fetch('/feed/manual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'action=' + action
+        })
+        .then(res => res.json())
+        .then(data => alert(data.message))
+        .catch(err => alert('Error: ' + err));
+    }
+
+    async function fetchReadings() {
+        try {
+            const response = await fetch('/historical');
+            const result = await response.json();
+
+            if (result.status === "success") {
+                const readings = result.readings.slice(-10); // last 10
+                const tbody = document.querySelector("table tbody");
+                tbody.innerHTML = "";
+
+                let summary = "All systems normal.";
+                readings.forEach(r => {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td>${r.createdAt}</td>
+                        <td>${r.temperature}</td>
+                        <td>${r.ph}</td>
+                        <td>${r.ammonia}</td>
+                        <td>${r.turbidity}</td>
+                    `;
+                    tbody.prepend(tr);
+
+                    if (r.temperature > 30 || r.temperature < 20) summary = "Temperature out of range!";
+                    else if (r.ph < 6.5 || r.ph > 8.5) summary = "pH level is abnormal!";
+                    else if (r.ammonia > 0.5) summary = "High ammonia detected!";
+                    else if (r.turbidity > 50) summary = "Water is too cloudy!";
+                });
+
+                updateSummaryColor(summary);
+            }
+        } catch (err) {
+            console.error("Error fetching readings:", err);
+        }
+    }
+
+    fetchReadings();
+    setInterval(fetchReadings, 30000); // refresh every 30 seconds
+</script>
+
+</body>
+</html>

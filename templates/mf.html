@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+<h2>Dashboard - {{ session['user']['username'] }} ({{ session['user']['role'] }})</h2>
+<p><a href="{{ url_for('logout') }}">Logout</a></p>
+
+<h3>Status: <span style="color: {{ alert_color }}">{{ summary }}</span></h3>
+
+<h3>Latest Readings</h3>
+<table border="1">
+<tr><th>Timestamp</th><th>Temperature</th><th>pH</th><th>Ammonia</th><th>Turbidity</th></tr>
+{% for r in readings %}
+<tr>
+<td>{{ r['createdAt'] }}</td>
+<td>{{ r['temperature'] }}</td>
+<td>{{ r['ph'] }}</td>
+<td>{{ r['ammonia'] }}</td>
+<td>{{ r['turbidity'] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<h3>Sensor Graphs</h3>
+<canvas id="sensorChart" width="800" height="400"></canvas>
+
+<h3>MOSFET Controls</h3>
+{% for m in mosfets %}
+<div>
+<h4>{{ m }}</h4>
+<button onclick="manualControl('{{ m }}','on')">ON</button>
+<button onclick="manualControl('{{ m }}','off')">OFF</button>
+<form onsubmit="return scheduleMosfet('{{ m }}');">
+Schedule Time (HH:MM): <input type="time" id="time_{{ m }}">
+<button type="submit">Schedule</button>
+</form><hr>
+</div>
+{% endfor %}
+
+<h3>Exports</h3>
+<form method="get" action="{{ url_for('export_pdf') }}"><button type="submit">Download PDF</button></form>
+<form method="get" action="{{ url_for('export_excel') }}"><button type="submit">Download Excel</button></form>
+
+<script>
+function manualControl(mosfet, action){
+    $.post("/mosfet/"+mosfet+"/manual", {action:action}, function(resp){ alert(resp.message); });
+}
+function scheduleMosfet(mosfet){
+    const time = $("#time_"+mosfet).val();
+    if(!time){ alert("Select time"); return false; }
+    $.ajax({
+        url:"/mosfet/"+mosfet+"/schedule",
+        type:"POST",
+        contentType:"application/json",
+        data: JSON.stringify({action:"on",time:time}),
+        success:function(resp){ alert(resp.message); },
+        error:function(err){ alert(err.responseJSON.message); }
+    });
+    return false;
+}
+
+// Chart.js setup
+const ctx = document.getElementById('sensorChart').getContext('2d');
+const labels = {{ readings|map(attribute='createdAt')|list }};
+const temperature = {{ readings|map(attribute='temperature')|list }};
+const ph = {{ readings|map(attribute='ph')|list }};
+const ammonia = {{ readings|map(attribute='ammonia')|list }};
+const turbidity = {{ readings|map(attribute='turbidity')|list }};
+
+const sensorChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [
+            { label: 'Temperature', data: temperature, borderColor: 'red', fill: false },
+            { label: 'pH', data: ph, borderColor: 'blue', fill: false },
+            { label: 'Ammonia', data: ammonia, borderColor: 'green', fill: false },
+            { label: 'Turbidity', data: turbidity, borderColor: 'orange', fill: false }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: { display: true, title: { display: true, text: 'Timestamp' } },
+            y: { display: true, title: { display: true, text: 'Value' } }
+        }
+    }
+});
+</script>
+</body>
+</html>

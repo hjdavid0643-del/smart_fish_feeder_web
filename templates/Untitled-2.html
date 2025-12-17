@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block title %}Reset Password{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-5">
+    <h3 class="mb-3 text-center">Reset Password</h3>
+    <form method="post" action="{{ url_for('reset_password', token=token) }}">
+      <div class="mb-3">
+        <label class="form-label">New Password</label>
+        <input type="password" class="form-control" name="new" required>
+      </div>
+      <button class="btn btn-success w-100">Reset Password</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

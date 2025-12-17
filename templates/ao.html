@@ -1,0 +1,26 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2>Welcome, {{ user.email }}</h2>
+<p>Role: {{ user.role }}</p>
+
+<h4 class="mt-4">Latest Readings</h4>
+{% if readings %}
+<table class="table table-striped">
+  <thead><tr><th>Time</th><th>Temp</th><th>pH</th><th>NH3</th><th>Turbidity</th></tr></thead>
+  <tbody>
+    {% for r in readings %}
+    <tr>
+      <td>{{ r.createdAt }}</td>
+      <td>{{ r.temperature }}</td>
+      <td>{{ r.ph }}</td>
+      <td>{{ r.ammonia }}</td>
+      <td>{{ r.turbidity }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <div class="alert alert-secondary">No data available yet.</div>
+{% endif %}
+{% endblock %}
