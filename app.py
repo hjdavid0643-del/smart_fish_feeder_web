@@ -309,7 +309,7 @@ def control():
 
 # ========== PDF EXPORT ==========
 
-@app.route("/download_pdf")
+@app.route("/pdf")
 @login_required
 def export_pdf():
     """Generate PDF report with sensor readings"""
