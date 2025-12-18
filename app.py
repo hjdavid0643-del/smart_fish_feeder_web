@@ -243,7 +243,7 @@ def mosfet():
 
 # ========== FEEDING CONTROL PAGE ==========
 
-@app.route("/control")
+@app.route("/control_feeding")
 @login_required
 def control():
     try:
@@ -455,7 +455,7 @@ def get_motor_status():
 
 # ========== FEEDER CONTROL ==========
 
-@app.route("/control_feeder", methods=["POST"])
+@app.route("/control_feeding", methods=["POST"])
 @login_required
 def control_feeder():
     """Control automatic feeder via MOSFET"""
