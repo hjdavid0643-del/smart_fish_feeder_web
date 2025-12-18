@@ -1,37 +1,40 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from flask_cors import CORS
-
 import firebase_admin
-from firebase_admin import credentials, firestore, messaging
-
+from firebase_admin import credentials, firestore
 from functools import wraps
 from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime
 import os
-import requests
+import io
 
+# PDF generation
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
 
 app = Flask(__name__)
-app.secret_key = "AIzaSyAiR0kD9irw4heL4xtnoKSnkEONM8afDxw"
+app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key-change-this-in-production")
 CORS(app)
 
-from flask import redirect, url_for
+# Firebase setup
+firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
+if firebase_creds:
+    import json
+    cred = credentials.Certificate(json.loads(firebase_creds))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "firebasekey.json")
+    cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
-@app.route("/")
-def home():
-    return redirect(url_for("login"))
-
-# ---------- Firebase setup ----------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "firebasekey.json")
-cred = credentials.Certificate(FIREBASE_KEY_PATH)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 serializer = URLSafeTimedSerializer(app.secret_key)
 
-
-# ---------- Helpers ----------
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -40,23 +43,12 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+# ========== AUTH ROUTES ==========
 
-def send_sms(message, phone_number="09364782808"):
-    url = "https://sms.iprogtech.com/api/v1/sms_messages"
-    data = {
-        "api_token": "63eec8eb96306825e8073faf986453548c94a811",
-        "message": message,
-        "phone_number": phone_number,
-    }
-    try:
-        response = requests.post(url, data=data)
-        return response.json()
-    except Exception as e:
-        print(f"SMS send error: {e}")
-        return None
+@app.route("/")
+def home():
+    return redirect(url_for("login"))
 
-
-# ---------- Entry route ----------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -64,51 +56,32 @@ def login():
         password = request.form.get("password")
 
         if not email or not password:
-            return render_template(
-                "login.html",
-                error="Please enter email and password",
-            )
+            return render_template("login.html", error="Please enter email and password")
 
-        users = (
-            db.collection("users")
-            .where("email", "==", email)
-            .limit(1)
-            .stream()
-        )
+        users = db.collection("users").where("email", "==", email).limit(1).stream()
         user_doc = None
         for u in users:
             user_doc = u
             break
 
         if not user_doc:
-            return render_template(
-                "login.html",
-                error="Invalid email or password",
-            )
+            return render_template("login.html", error="Invalid email or password")
 
         data = user_doc.to_dict()
         if data.get("password") != password:
-            return render_template(
-                "login.html",
-                error="Invalid email or password",
-            )
+            return render_template("login.html", error="Invalid email or password")
 
         session["user"] = email
         session["role"] = data.get("role", "worker")
         return redirect(url_for("dashboard"))
 
-    # GET: show the email/password form
     return render_template("login.html")
-
-
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
-# ---------- Auth: register ----------
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -116,31 +89,17 @@ def register():
         password = request.form.get("password")
 
         if not email or not password:
-            return redirect(url_for("register"))
+            return render_template("register.html", error="Please fill all fields")
 
-        existing = (
-            db.collection("users")
-            .where("email", "==", email)
-            .limit(1)
-            .stream()
-        )
+        existing = db.collection("users").where("email", "==", email).limit(1).stream()
         for _ in existing:
-            return redirect(url_for("register"))
+            return render_template("register.html", error="Email already exists")
 
-        db.collection("users").add(
-            {
-                "email": email,
-                "password": password,
-                "role": "worker",
-            }
-        )
-
+        db.collection("users").add({"email": email, "password": password, "role": "worker"})
         return redirect(url_for("login"))
 
-    return render_template("login.html")
+    return render_template("register.html")
 
-
-# ---------- Password reset ----------
 @app.route("/reset_password", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
@@ -148,12 +107,7 @@ def reset_password():
         if not email:
             return render_template("reset.html", error="Please enter your email")
 
-        users = (
-            db.collection("users")
-            .where("email", "==", email)
-            .limit(1)
-            .stream()
-        )
+        users = db.collection("users").where("email", "==", email).limit(1).stream()
         user_doc = None
         for u in users:
             user_doc = u
@@ -168,7 +122,6 @@ def reset_password():
 
     return render_template("reset.html")
 
-
 @app.route("/change_password/<token>", methods=["GET", "POST"])
 def change_password(token):
     try:
@@ -179,17 +132,9 @@ def change_password(token):
     if request.method == "POST":
         new_password = request.form.get("password")
         if not new_password:
-            return render_template(
-                "change.html",
-                error="Please enter a new password",
-            )
+            return render_template("change.html", error="Please enter a new password")
 
-        users = (
-            db.collection("users")
-            .where("email", "==", email)
-            .limit(1)
-            .stream()
-        )
+        users = db.collection("users").where("email", "==", email).limit(1).stream()
         user_doc = None
         for u in users:
             user_doc = u
@@ -203,12 +148,11 @@ def change_password(token):
 
     return render_template("change.html")
 
+# ========== DASHBOARD ==========
 
-# ---------- Dashboard ----------
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # last 50 readings for table + chart
     readings_ref = (
         db.collection("devices")
         .document("ESP32_001")
@@ -221,17 +165,14 @@ def dashboard():
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
-        data.append(
-            {
-                "temperature": doc.get("temperature"),
-                "ph": doc.get("ph"),
-                "ammonia": doc.get("ammonia"),
-                "turbidity": doc.get("turbidity"),
-                "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
-                if doc.get("createdAt")
-                else "",
-            }
-        )
+        data.append({
+            "temperature": doc.get("temperature"),
+            "ph": doc.get("ph"),
+            "ammonia": doc.get("ammonia"),
+            "turbidity": doc.get("turbidity"),
+            "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
+            if doc.get("createdAt") else "",
+        })
 
     data = list(reversed(data))
 
@@ -240,43 +181,24 @@ def dashboard():
 
     if data:
         last = data[-1]
-
-        if last["temperature"] is not None and (
-            last["temperature"] > 30 or last["temperature"] < 20
-        ):
-            summary = "Temperature out of range!"
+        if last["temperature"] is not None and (last["temperature"] > 30 or last["temperature"] < 20):
+            summary = "⚠️ Temperature out of range!"
             alert_color = "red"
-            send_sms(
-                f"Alert: {summary} Temperature: {last['temperature']}°C"
-            )
-
         if last["ph"] is not None and (last["ph"] < 6.5 or last["ph"] > 8.5):
-            summary = "pH level is abnormal!"
+            summary = "⚠️ pH level is abnormal!"
             alert_color = "orange"
-            send_sms(f"Alert: {summary} pH: {last['ph']}")
-
         if last["ammonia"] is not None and last["ammonia"] > 0.5:
-            summary = "High ammonia detected!"
+            summary = "⚠️ High ammonia detected!"
             alert_color = "darkred"
-            send_sms(
-                f"Alert: {summary} Ammonia: {last['ammonia']} ppm"
-            )
-
         if last["turbidity"] is not None and last["turbidity"] > 50:
-            summary = "Water is too cloudy!"
+            summary = "⚠️ Water is too cloudy!"
             alert_color = "gold"
-            send_sms(
-                f"Alert: {summary} Turbidity: {last['turbidity']} NTU"
-            )
 
-    # data for Sensor Trends chart
     time_labels = [r["createdAt"] for r in data]
     temp_values = [r["temperature"] for r in data]
     ph_values = [r["ph"] for r in data]
     ammonia_values = [r["ammonia"] for r in data]
     turbidity_values = [r["turbidity"] for r in data]
-
-    # only latest 10 for table
     latest_10 = data[-10:]
 
     return render_template(
@@ -291,9 +213,103 @@ def dashboard():
         turbidity_values=turbidity_values,
     )
 
+# ========== MOSFET PAGE ==========
+
+@app.route("/mosfet")
+@login_required
+def mosfet():
+    readings_ref = (
+        db.collection("devices")
+        .document("ESP32_001")
+        .collection("readings")
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+        .limit(50)
+    )
+
+    readings_cursor = readings_ref.stream()
+    data = []
+    for r in readings_cursor:
+        doc = r.to_dict()
+        data.append({
+            "temperature": doc.get("temperature"),
+            "ph": doc.get("ph"),
+            "ammonia": doc.get("ammonia"),
+            "turbidity": doc.get("turbidity"),
+            "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
+            if doc.get("createdAt") else "",
+        })
+
+    return render_template("mosfet.html", readings=data)
+
+# ========== FEEDING CONTROL PAGE ==========
+
+@app.route("/control")
+@login_required
+def control():
+    try:
+        readings_ref = db.collection("devices").document("ESP32_001").collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(10)
+        readings = []
+        for doc in readings_ref.stream():
+            data = doc.to_dict()
+            readings.append({
+                "temperature": data.get("temperature"),
+                "ph": data.get("ph"),
+                "ammonia": data.get("ammonia"),
+                "turbidity": data.get("turbidity"),
+                "createdAt": data.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if data.get("createdAt") else ""
+            })
+        
+        all_readings_ref = db.collection("devices").document("ESP32_001").collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(50)
+        all_readings = []
+        for doc in all_readings_ref.stream():
+            data = doc.to_dict()
+            all_readings.append({
+                "temperature": data.get("temperature"),
+                "ph": data.get("ph"),
+                "ammonia": data.get("ammonia"),
+                "turbidity": data.get("turbidity"),
+                "createdAt": data.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if data.get("createdAt") else ""
+            })
+        
+        chart_labels = []
+        chart_temp = []
+        chart_ph = []
+        chart_ammonia = []
+        chart_turbidity = []
+        
+        for r in reversed(readings):
+            chart_labels.append(r.get('createdAt', 'N/A'))
+            chart_temp.append(r.get('temperature', 0))
+            chart_ph.append(r.get('ph', 0))
+            chart_ammonia.append(r.get('ammonia', 0))
+            chart_turbidity.append(r.get('turbidity', 0))
+        
+        summary = "Feeding & Motor Control Dashboard"
+        
+        return render_template("control.html", 
+                             readings=readings,
+                             all_readings=all_readings,
+                             summary=summary,
+                             chart_labels=chart_labels,
+                             chart_temp=chart_temp,
+                             chart_ph=chart_ph,
+                             chart_ammonia=chart_ammonia,
+                             chart_turbidity=chart_turbidity)
+    except Exception as e:
+        return render_template("control.html", 
+                             error=str(e), 
+                             readings=[], 
+                             all_readings=[],
+                             summary="Error loading data",
+                             chart_labels=[],
+                             chart_temp=[],
+                             chart_ph=[],
+                             chart_ammonia=[],
+                             chart_turbidity=[])
+
 # ========== PDF EXPORT ==========
 
-@app.route("/export_pdf")
+@app.route("/download_pdf")
 @login_required
 def export_pdf():
     """Generate PDF report with sensor readings"""
@@ -377,21 +393,20 @@ def export_pdf():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== MOSFET MOTOR CONTROL ==========
 
 @app.route("/control_motor", methods=["POST"])
 @login_required
 def control_motor():
-    """Control motor RPM via MOSFET PWM"""
+    """Control water pump motor via MOSFET PWM"""
     try:
         data = request.get_json() or request.form
-        rpm = data.get("rpm")
         action = data.get("action")
+        speed = data.get("speed", 50)
         
         if action == "off":
             db.collection("devices").document("ESP32_001").set({
-                "motor_rpm": 0,
+                "motor_speed": 0,
                 "motor_status": "off",
                 "updatedAt": datetime.utcnow()
             }, merge=True)
@@ -399,172 +414,179 @@ def control_motor():
             
         elif action == "on":
             db.collection("devices").document("ESP32_001").set({
-                "motor_rpm": 50,
+                "motor_speed": int(speed),
                 "motor_status": "on",
                 "updatedAt": datetime.utcnow()
             }, merge=True)
-            return jsonify({"status": "success", "message": "Motor turned ON at 50%"}), 200
+            return jsonify({"status": "success", "message": f"Motor turned ON at {speed}%"}), 200
             
-        elif action == "set_speed" and rpm is not None:
-            rpm_value = int(rpm)
-            if rpm_value < 0 or rpm_value > 100:
-                return jsonify({"status": "error", "message": "RPM must be 0-100"}), 400
+        elif action == "set_speed":
+            speed_value = int(speed)
+            if speed_value < 0 or speed_value > 100:
+                return jsonify({"status": "error", "message": "Speed must be 0-100"}), 400
             
             db.collection("devices").document("ESP32_001").set({
-                "motor_rpm": rpm_value,
-                "motor_status": "on" if rpm_value > 0 else "off",
+                "motor_speed": speed_value,
+                "motor_status": "on" if speed_value > 0 else "off",
                 "updatedAt": datetime.utcnow()
             }, merge=True)
-            return jsonify({"status": "success", "message": f"Speed set to {rpm_value}%"}), 200
+            return jsonify({"status": "success", "message": f"Speed set to {speed_value}%"}), 200
         
         return jsonify({"status": "error", "message": "Invalid action"}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/get_motor_status", methods=["GET"])
 @login_required
 def get_motor_status():
-    """Get current motor RPM and status"""
+    """Get current motor speed and status"""
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
             data = device_doc.to_dict()
             return jsonify({
                 "status": "success",
-                "motor_rpm": data.get("motor_rpm", 0),
+                "motor_speed": data.get("motor_speed", 0),
                 "motor_status": data.get("motor_status", "off")
             }), 200
-        return jsonify({"status": "success", "motor_rpm": 0, "motor_status": "off"}), 200
+        return jsonify({"status": "success", "motor_speed": 0, "motor_status": "off"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ========== FEEDER CONTROL ==========
 
+@app.route("/control_feeder", methods=["POST"])
+@login_required
+def control_feeder():
+    """Control automatic feeder via MOSFET"""
+    try:
+        data = request.get_json() or request.form
+        action = data.get("action")
+        speed = data.get("speed", 50)
+        
+        if action == "off":
+            db.collection("devices").document("ESP32_001").set({
+                "feeder_speed": 0,
+                "feeder_status": "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": "Feeder turned OFF"}), 200
+            
+        elif action == "on":
+            db.collection("devices").document("ESP32_001").set({
+                "feeder_speed": int(speed),
+                "feeder_status": "on",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": f"Feeder turned ON at {speed}%"}), 200
+            
+        elif action == "set_speed":
+            speed_value = int(speed)
+            if speed_value < 0 or speed_value > 100:
+                return jsonify({"status": "error", "message": "Speed must be 0-100"}), 400
+            
+            db.collection("devices").document("ESP32_001").set({
+                "feeder_speed": speed_value,
+                "feeder_status": "on" if speed_value > 0 else "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": f"Feeder speed set to {speed_value}%"}), 200
+        
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/get_feeder_status", methods=["GET"])
+@login_required
+def get_feeder_status():
+    """Get current feeder speed and status"""
+    try:
+        device_doc = db.collection("devices").document("ESP32_001").get()
+        if device_doc.exists:
+            data = device_doc.to_dict()
+            return jsonify({
+                "status": "success",
+                "feeder_speed": data.get("feeder_speed", 0),
+                "feeder_status": data.get("feeder_status", "off")
+            }), 200
+        return jsonify({"status": "success", "feeder_speed": 0, "feeder_status": "off"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-# ---------- API routes ----------
+# ========== FEEDING SCHEDULE ==========
+
+@app.route("/save_feeding_schedule", methods=["POST"])
+@login_required
+def save_feeding_schedule():
+    """Save automatic feeding schedule"""
+    try:
+        data = request.get_json() or request.form
+        first_feed = data.get("first_feed")
+        second_feed = data.get("second_feed")
+        duration = data.get("duration")
+        
+        if not first_feed or not second_feed or not duration:
+            return jsonify({"status": "error", "message": "All fields required"}), 400
+        
+        db.collection("devices").document("ESP32_001").set({
+            "feeding_schedule": {
+                "first_feed": first_feed,
+                "second_feed": second_feed,
+                "duration": int(duration)
+            },
+            "schedule_enabled": True,
+            "updatedAt": datetime.utcnow()
+        }, merge=True)
+        
+        return jsonify({"status": "success", "message": "Feeding schedule saved"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/get_feeding_schedule_info", methods=["GET"])
+@login_required
+def get_feeding_schedule_info():
+    """Get current feeding schedule"""
+    try:
+        device_doc = db.collection("devices").document("ESP32_001").get()
+        if device_doc.exists:
+            data = device_doc.to_dict()
+            schedule = data.get("feeding_schedule", {})
+            return jsonify({
+                "status": "success",
+                "schedule": schedule,
+                "enabled": data.get("schedule_enabled", False)
+            }), 200
+        return jsonify({"status": "success", "schedule": {}, "enabled": False}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ========== API ROUTES ==========
+
 @app.route("/add_reading", methods=["POST"])
 def add_reading():
     try:
         data = request.get_json()
         if not data:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "No JSON data provided",
-                    }
-                ),
-                400,
-            )
+            return jsonify({"status": "error", "message": "No data provided"}), 400
 
         device_id = data.get("device_id", "ESP32_001")
-        temperature = data.get("temperature")
-        ph = data.get("ph")
-        ammonia = data.get("ammonia")
-        turbidity = data.get("turbidity")
+        temperature = float(data.get("temperature"))
+        ph = float(data.get("ph"))
+        ammonia = float(data.get("ammonia"))
+        turbidity = float(data.get("turbidity"))
 
-        if None in [temperature, ph, ammonia, turbidity]:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Incomplete sensor data",
-                    }
-                ),
-                400,
-            )
+        doc_ref = db.collection("devices").document(device_id).collection("readings").document()
+        doc_ref.set({
+            "temperature": temperature,
+            "ph": ph,
+            "ammonia": ammonia,
+            "turbidity": turbidity,
+            "createdAt": datetime.utcnow(),
+        })
 
-        try:
-            temperature = float(temperature)
-            ph = float(ph)
-            ammonia = float(ammonia)
-            turbidity = float(turbidity)
-        except ValueError:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Sensor values must be numeric",
-                    }
-                ),
-                400,
-            )
-
-        doc_ref = (
-            db.collection("devices")
-            .document(device_id)
-            .collection("readings")
-            .document()
-        )
-
-        doc_ref.set(
-            {
-                "temperature": temperature,
-                "ph": ph,
-                "ammonia": ammonia,
-                "turbidity": turbidity,
-                "createdAt": datetime.utcnow(),
-            }
-        )
-
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": f"Reading saved for device {device_id}",
-                }
-            ),
-            200,
-        )
-
+        return jsonify({"status": "success", "message": f"Reading saved for {device_id}"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/feed/manual", methods=["POST"])
-def manual_feed():
-    action = request.form.get("action")
-    if action == "on":
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": "Manual feeding ON triggered",
-                }
-            ),
-            200,
-        )
-    if action == "off":
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": "Manual feeding OFF triggered",
-                }
-            ),
-            200,
-        )
-    return jsonify({"status": "error", "message": "Invalid action"}), 400
-
-
-@app.route("/feed/schedule", methods=["POST"])
-def set_schedule():
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "message": "Automatic feeding schedule set for 9AM and 4PM",
-            }
-        ),
-        200,
-    )
-
-
-@app.route("/ping", methods=["GET"])
-def ping():
-    return jsonify({"status": "ok", "message": "Server reachable"}), 200
-
 
 @app.route("/historical", methods=["GET"])
 def historical():
@@ -580,65 +602,22 @@ def historical():
         data = []
         for r in readings:
             doc = r.to_dict()
-            data.append(
-                {
-                    "temperature": doc.get("temperature"),
-                    "ph": doc.get("ph"),
-                    "ammonia": doc.get("ammonia"),
-                    "turbidity": doc.get("turbidity"),
-                    "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
-                    if doc.get("createdAt")
-                    else "",
-                }
-            )
+            data.append({
+                "temperature": doc.get("temperature"),
+                "ph": doc.get("ph"),
+                "ammonia": doc.get("ammonia"),
+                "turbidity": doc.get("turbidity"),
+                "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
+                if doc.get("createdAt") else "",
+            })
 
         return jsonify({"status": "success", "readings": data}), 200
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "ok", "message": "Server reachable"}), 200
 
-@app.route("/send_notification", methods=["POST"])
-def send_notification():
-    try:
-        data = request.get_json()
-        token = data.get("token")
-        title = data.get("title", "Alert")
-        body = data.get("body", "Notification from Smart Fish Feeder")
-
-        if not token:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Token is required",
-                    }
-                ),
-                400,
-            )
-
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body,
-            ),
-            token=token,
-        )
-        response = messaging.send(message)
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": f"Notification sent: {response}",
-                }
-            ),
-            200,
-        )
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-# ---------- Run ----------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
