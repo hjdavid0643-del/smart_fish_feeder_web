@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Fish Feeder Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body, html {
+      min-height: 100vh;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+      color: #fff;
+      overflow-x: hidden;
+    }
+    
+    .top-buttons {
+      position: fixed;
+      top: 15px;
+      right: 30px;
+      display: flex;
+      gap: 10px;
+      z-index: 1000;
+    }
+    .btn-top {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 20px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+      transition: transform 0.2s;
+    }
+    .btn-top:hover {
+      transform: scale(1.05);
+    }
+    .btn-cyan { background: #00bcd4; color: white; }
+    .btn-green { background: #4caf50; color: white; }
+    .btn-red { background: #f44336; color: white; }
+    
+    .container {
+      max-width: 980px;
+      margin: 80px auto 40px;
+      background: rgba(58, 50, 135, 0.85);
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    }
+    
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 32px;
+    }
+    h2 {
+      margin-top: 10px;
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+    
+    .summary {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 25px;
+      font-weight: 600;
+      text-align: center;
+      font-size: 16px;
+      background: rgba(76, 175, 80, 0.3);
+    }
+    
+    .sensor-section {
+      margin-bottom: 30px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.25);
+      font-size: 14px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    th {
+      background: rgba(0, 0, 0, 0.4);
+      font-weight: 700;
+    }
+    
+    .chart-section {
+      background: rgba(0,0,0,0.15);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 25px;
+    }
+    
+    .chart-box {
+      width: 100%;
+      height: 350px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 10px;
+    }
+    
+    .feed-controls {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin: 25px 0;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 25px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .btn:hover {
+      transform: scale(1.05);
+    }
+    .btn-success { background: #4caf50; color: white; }
+    .btn-danger { background: #f44336; color: white; }
+    .btn-primary { background: #2196f3; color: white; }
+    
+    .motor-control {
+      margin-top: 25px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 20px;
+      border-radius: 12px;
+    }
+    .motor-buttons {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .motor-buttons .btn {
+      flex: 1;
+      padding: 14px;
+    }
+    .rpm-control {
+      margin-bottom: 20px;
+    }
+    .rpm-control input[type="range"] {
+      width: 100%;
+      height: 10px;
+      margin: 15px 0;
+      cursor: pointer;
+    }
+    .status-display {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 17px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="top-buttons">
+    <button onclick="downloadPDF()" class="btn-top btn-cyan">📥 Download PDF</button>
+    <button onclick="window.location.href='/historical'" class="btn-top btn-cyan">📊 View Historical Data</button>
+    <button onclick="window.location.reload()" class="btn-top btn-green">🔄 Refresh</button>
+    <button onclick="window.location.href='/logout'" class="btn-top btn-red">Logout</button>
+  </div>
+
+  <div class="container">
+    <h1>🐟 Smart Fish Feeder Dashboard</h1>
+
+    <div class="summary">
+      🟢 All systems normal.
+    </div>
+
+    <div class="sensor-section">
+      <h2>Latest Sensor Readings (Last 10)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Temperature (°C)</th>
+            <th>pH</th>
+            <th>Ammonia (ppm)</th>
+            <th>Turbidity (NTU)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td colspan="5">No sensor data available</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="chart-section">
+      <h2 style="text-align:center;">Sensor Trends</h2>
+      <div class="chart-box">
+        <canvas id="sensorChart"></canvas>
+      </div>
+    </div>
+
+    <div class="feed-controls">
+      <button onclick="manualFeed('on')" class="btn btn-success">Manual Feed ON</button>
+      <button onclick="manualFeed('off')" class="btn btn-danger">Manual Feed OFF</button>
+      <button onclick="setAutoFeed()" class="btn btn-primary">Set Automatic Feeding 9:00 AM & 4:00 PM</button>
+    </div>
+
+    <div class="motor-control">
+      <h2>⚡ Motor Control (MOSFET)</h2>
+      
+      <div class="motor-buttons">
+        <button onclick="controlMotor('on')" class="btn btn-success">▶ Motor ON</button>
+        <button onclick="controlMotor('off')" class="btn btn-danger">⏹ Motor OFF</button>
+      </div>
+      
+      <div class="rpm-control">
+        <label>Motor Speed: <strong id="rpm-value">50</strong>%</label>
+        <input type="range" id="rpm-slider" min="0" max="100" value="50" 
+               oninput="updateRPMDisplay(this.value)">
+        <button onclick="setMotorSpeed()" class="btn btn-primary" style="width: 100%;">⚡ Set Speed</button>
+      </div>
+      
+      <div class="status-display">
+        Motor RPM: <strong id="current-rpm">0</strong>% | 
+        Status: <strong id="motor-status-text">OFF</strong>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['10:00', '11:00', '12:00'],
+        datasets: [
+          {label: 'Temperature (°C)', data: [28, 29, 28.5], borderColor: 'rgb(255,99,132)', tension: 0.3, borderWidth: 2},
+          {label: 'pH', data: [7.2, 7.1, 7.3], borderColor: 'rgb(54,162,235)', tension: 0.3, borderWidth: 2},
+          {label: 'Ammonia (ppm)', data: [0.5, 0.6, 0.4], borderColor: 'rgb(75,192,192)', tension: 0.3, borderWidth: 2},
+          {label: 'Turbidity (NTU)', data: [10, 12, 11], borderColor: 'rgb(255,205,86)', tension: 0.3, borderWidth: 2}
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {legend: {position: 'top'}}
+      }
+    });
+
+    function downloadPDF() { alert('PDF download feature'); }
+    function manualFeed(action) { alert('Manual feed ' + action); }
+    function setAutoFeed() { alert('Auto feed scheduled'); }
+    function updateRPMDisplay(val) { document.getElementById('rpm-value').textContent = val; }
+    function controlMotor(action) { alert('Motor ' + action); }
+    function setMotorSpeed() { alert('Speed set to ' + document.getElementById('rpm-slider').value + '%'); }
+  </script>
+</body>
+</html>
+
+
+
+

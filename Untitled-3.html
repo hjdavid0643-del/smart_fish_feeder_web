@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Fish Feeder Dashboard</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      padding: 24px;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .alert {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .alert.green  { background:#d4edda; color:#155724; }
+    .alert.orange { background:#fff3cd; color:#856404; }
+    .alert.red    { background:#f8d7da; color:#721c24; }
+    .alert.darkred{ background:#f5c6c6; color:#721c24; }
+    .alert.gold   { background:#ffe5b4; color:#8b7500; }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    button {
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      background: #667eea;
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    button:hover { background:#764ba2; }
+
+    .chart-wrapper {
+      width: 100%;
+      height: 380px;
+      padding: 12px;
+      background:#f7f7f7;
+      border-radius: 8px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      margin: 8px 0 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #e0e0e0;
+      text-align: left;
+    }
+    th {
+      background:#667eea;
+      color:#fff;
+    }
+    tr:hover { background:#f5f5f5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🐟 Smart Fish Feeder Dashboard</h1>
+
+    <div class="alert {{ alert_color }}">{{ summary }}</div>
+
+    <div class="controls">
+      <button id="btnDownloadPdf">📥 Download Chart as PDF</button>
+      <button onclick="location.href='{{ url_for('logout') }}'">🚪 Logout</button>
+    </div>
+
+    <div class="chart-wrapper">
+      <canvas id="sensorChart"></canvas>
+    </div>
+
+    <h2>Latest Readings (Last 10)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Temperature (°C)</th>
+          <th>pH</th>
+          <th>Ammonia (ppm)</th>
+          <th>Turbidity (NTU)</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in readings %}
+        <tr>
+          <td>{{ r.temperature }}</td>
+          <td>{{ r.ph }}</td>
+          <td>{{ r.ammonia }}</td>
+          <td>{{ r.turbidity }}</td>
+          <td>{{ r.createdAt }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- jsPDF for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    // Data from Flask (Jinja tojson is the standard way with Chart.js) [web:169]
+    const timeLabels      = {{ time_labels | tojson }};
+    const tempValues      = {{ temp_values | tojson }};
+    const phValues        = {{ ph_values | tojson }};
+    const ammoniaValues   = {{ ammonia_values | tojson }};
+    const turbidityValues = {{ turbidity_values | tojson }};
+
+    // Draw the Chart.js line chart
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    const sensorChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: timeLabels,
+        datasets: [
+          {
+            label: 'Temperature (°C)',
+            data: tempValues,
+            borderColor: 'rgb(255, 99, 32)',
+            backgroundColor: 'rgba(255, 99, 32, 0.15)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true
+          },
+          {
+            label: 'pH',
+            data: phValues,
+            borderColor: 'rgb(54, 162, 235)',
+            backgroundColor: 'rgba(54, 162, 235, 0.10)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false
+          },
+          {
+            label: 'Ammonia (ppm)',
+            data: ammoniaValues,
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.10)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false
+          },
+          {
+            label: 'Turbidity (NTU)',
+            data: turbidityValues,
+            borderColor: 'rgb(255, 205, 86)',
+            backgroundColor: 'rgba(255, 205, 86, 0.10)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top' },
+          title: {
+            display: true,
+            text: 'Sensor Trends Over Time'
+          }
+        },
+        scales: {
+          x: {
+            title: { display: true, text: 'Time' }
+          },
+          y: {
+            title: { display: true, text: 'Value' }
+          }
+        }
+      }
+    });
+
+    // Export chart canvas to PDF using jsPDF
+    const btnDownloadPdf = document.getElementById('btnDownloadPdf');
+    btnDownloadPdf.addEventListener('click', () => {
+      const canvas  = document.getElementById('sensorChart');
+      const imgData = canvas.toDataURL('image/png', 1.0);   // canvas → PNG [web:138][web:153]
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('landscape', 'mm', 'a4');       // A4 landscape [web:168][web:173]
+
+      const pageWidth  = pdf.internal.pageSize.getWidth();
+      const margin     = 10;
+      const imgWidth   = pageWidth - margin * 2;
+      const imgHeight  = canvas.height * (imgWidth / canvas.width);  // keep aspect ratio [web:150]
+
+      pdf.setFontSize(14);
+      pdf.text('Smart Fish Feeder - Sensor Trends', margin, 12);
+      pdf.setFontSize(9);
+      pdf.text('Generated: ' + new Date().toLocaleString(), margin, 18);
+
+      pdf.addImage(imgData, 'PNG', margin, 24, imgWidth, imgHeight); // add chart image [web:138][web:153]
+      pdf.save('sensor_trends.pdf');
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
