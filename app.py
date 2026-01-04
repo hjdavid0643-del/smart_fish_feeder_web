@@ -408,33 +408,24 @@ def control_motor():
         if action == "off":
             db.collection("devices").document("ESP32_001").set({
                 "motor_speed": data.get("motor_speed", 0),
-            "motor_status": data.get("motor_status", "off")
-
-                "updatedAt": datetime.utcnow()
-            }, merge=True)
-            return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
-            
-        elif action == "on":
-            db.collection("devices").document("ESP32_001").set({
-                "motor_speed": int(speed),
-                "motor_status": "on",
-                "updatedAt": datetime.utcnow()
-            }, merge=True)
-            return jsonify({"status": "success", "message": f"Motor turned ON at {speed}%"}), 200
-            
-        elif action == "set_speed":
-            speed_value = int(speed)
-            if speed_value < 0 or speed_value > 100:
-                return jsonify({"status": "error", "message": "Speed must be 0-100"}), 400
-            
-            db.collection("devices").document("ESP32_001").set({
-                "motor_speed": speed_value,
-                "motor_status": "on" if speed_value > 0 else "off",
-                "updatedAt": datetime.utcnow()
-            }, merge=True)
-            return jsonify({"status": "success", "message": f"Speed set to {speed_value}%"}), 200
-        
-        return jsonify({"status": "error", "message": "Invalid action"}), 400
+          @app.route("/get_motor_status", methods=["GET"])
+@login_required
+def get_motor_status():
+    """Get current motor speed and status"""
+    try:
+        device_doc = db.collection("devices").document("ESP32_001").get()
+        if device_doc.exists:
+            data = device_doc.to_dict()
+            return jsonify({
+                "status": "success",
+                "motor_speed": data.get("motor_speed", 0),
+                "motor_status": data.get("motor_status", "off")
+            }), 200
+        return jsonify({
+            "status": "success",
+            "motor_speed": 0,
+            "motor_status": "off"
+        }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
