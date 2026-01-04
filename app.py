@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
 from flask_cors import CORS
 import firebase_admin
@@ -59,10 +58,7 @@ def login():
             return render_template("login.html", error="Please enter email and password")
 
         users = db.collection("users").where("email", "==", email).limit(1).stream()
-        user_doc = None
-        for u in users:
-            user_doc = u
-            break
+        user_doc = next(users, None)
 
         if not user_doc:
             return render_template("login.html", error="Invalid email or password")
@@ -92,7 +88,7 @@ def register():
             return render_template("register.html", error="Please fill all fields")
 
         existing = db.collection("users").where("email", "==", email).limit(1).stream()
-        for _ in existing:
+        if next(existing, None):
             return render_template("register.html", error="Email already exists")
 
         db.collection("users").add({"email": email, "password": password, "role": "worker"})
@@ -108,10 +104,7 @@ def reset_password():
             return render_template("reset.html", error="Please enter your email")
 
         users = db.collection("users").where("email", "==", email).limit(1).stream()
-        user_doc = None
-        for u in users:
-            user_doc = u
-            break
+        user_doc = next(users, None)
 
         if not user_doc:
             return render_template("reset.html", error="Email not found")
@@ -135,10 +128,7 @@ def change_password(token):
             return render_template("change.html", error="Please enter a new password")
 
         users = db.collection("users").where("email", "==", email).limit(1).stream()
-        user_doc = None
-        for u in users:
-            user_doc = u
-            break
+        user_doc = next(users, None)
 
         if not user_doc:
             return "User not found"
@@ -245,74 +235,87 @@ def mosfet():
 
 @app.route("/control_feeding")
 @login_required
-def control():
+def control_feeding_page():
     try:
-        readings_ref = db.collection("devices").document("ESP32_001").collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(10)
+        readings_ref = (
+            db.collection("devices").document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(10)
+        )
         readings = []
-        for doc in readings_ref.stream():
-            data = doc.to_dict()
+        for doc_snap in readings_ref.stream():
+            d = doc_snap.to_dict()
             readings.append({
-                "temperature": data.get("temperature"),
-                "ph": data.get("ph"),
-                "ammonia": data.get("ammonia"),
-                "turbidity": data.get("turbidity"),
-                "createdAt": data.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if data.get("createdAt") else ""
+                "temperature": d.get("temperature"),
+                "ph": d.get("ph"),
+                "ammonia": d.get("ammonia"),
+                "turbidity": d.get("turbidity"),
+                "createdAt": d.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if d.get("createdAt") else ""
             })
-        
-        all_readings_ref = db.collection("devices").document("ESP32_001").collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(50)
+
+        all_readings_ref = (
+            db.collection("devices").document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
         all_readings = []
-        for doc in all_readings_ref.stream():
-            data = doc.to_dict()
+        for doc_snap in all_readings_ref.stream():
+            d = doc_snap.to_dict()
             all_readings.append({
-                "temperature": data.get("temperature"),
-                "ph": data.get("ph"),
-                "ammonia": data.get("ammonia"),
-                "turbidity": data.get("turbidity"),
-                "createdAt": data.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if data.get("createdAt") else ""
+                "temperature": d.get("temperature"),
+                "ph": d.get("ph"),
+                "ammonia": d.get("ammonia"),
+                "turbidity": d.get("turbidity"),
+                "createdAt": d.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if d.get("createdAt") else ""
             })
-        
+
         chart_labels = []
         chart_temp = []
         chart_ph = []
         chart_ammonia = []
         chart_turbidity = []
-        
+
         for r in reversed(readings):
-            chart_labels.append(r.get('createdAt', 'N/A'))
-            chart_temp.append(r.get('temperature', 0))
-            chart_ph.append(r.get('ph', 0))
-            chart_ammonia.append(r.get('ammonia', 0))
-            chart_turbidity.append(r.get('turbidity', 0))
-        
+            chart_labels.append(r.get("createdAt", "N/A"))
+            chart_temp.append(r.get("temperature", 0))
+            chart_ph.append(r.get("ph", 0))
+            chart_ammonia.append(r.get("ammonia", 0))
+            chart_turbidity.append(r.get("turbidity", 0))
+
         summary = "Feeding & Motor Control Dashboard"
-        
-        return render_template("control.html", 
-                             readings=readings,
-                             all_readings=all_readings,
-                             summary=summary,
-                             chart_labels=chart_labels,
-                             chart_temp=chart_temp,
-                             chart_ph=chart_ph,
-                             chart_ammonia=chart_ammonia,
-                             chart_turbidity=chart_turbidity)
+
+        return render_template(
+            "control.html",
+            readings=readings,
+            all_readings=all_readings,
+            summary=summary,
+            chart_labels=chart_labels,
+            chart_temp=chart_temp,
+            chart_ph=chart_ph,
+            chart_ammonia=chart_ammonia,
+            chart_turbidity=chart_turbidity,
+        )
     except Exception as e:
-        return render_template("control.html", 
-                             error=str(e), 
-                             readings=[], 
-                             all_readings=[],
-                             summary="Error loading data",
-                             chart_labels=[],
-                             chart_temp=[],
-                             chart_ph=[],
-                             chart_ammonia=[],
-                             chart_turbidity=[])
+        return render_template(
+            "control.html",
+            error=str(e),
+            readings=[],
+            all_readings=[],
+            summary="Error loading data",
+            chart_labels=[],
+            chart_temp=[],
+            chart_ph=[],
+            chart_ammonia=[],
+            chart_turbidity=[],
+        )
 
 # ========== PDF EXPORT ==========
 
 @app.route("/export_pdf")
 @login_required
 def export_pdf():
-    """Generate PDF report with sensor readings"""
     try:
         readings_ref = (
             db.collection("devices")
@@ -393,7 +396,6 @@ def export_pdf():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== MOSFET MOTOR CONTROL ==========
 
 @app.route("/control_motor", methods=["POST"])
@@ -404,11 +406,40 @@ def control_motor():
         data = request.get_json() or request.form
         action = data.get("action")
         speed = data.get("speed", 50)
-        
+
         if action == "off":
             db.collection("devices").document("ESP32_001").set({
-                "motor_speed": data.get("motor_speed", 0),
-          @app.route("/get_motor_status", methods=["GET"])
+                "motor_speed": 0,
+                "motor_status": "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
+
+        elif action == "on":
+            db.collection("devices").document("ESP32_001").set({
+                "motor_speed": int(speed),
+                "motor_status": "on",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": f"Motor turned ON at {speed}%"}), 200
+
+        elif action == "set_speed":
+            speed_value = int(speed)
+            if speed_value < 0 or speed_value > 100:
+                return jsonify({"status": "error", "message": "Speed must be 0-100"}), 400
+
+            db.collection("devices").document("ESP32_001").set({
+                "motor_speed": speed_value,
+                "motor_status": "on" if speed_value > 0 else "off",
+                "updatedAt": datetime.utcnow()
+            }, merge=True)
+            return jsonify({"status": "success", "message": f"Speed set to {speed_value}%"}), 200
+
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/get_motor_status", methods=["GET"])
 @login_required
 def get_motor_status():
     """Get current motor speed and status"""
@@ -429,23 +460,6 @@ def get_motor_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/get_motor_status", methods=["GET"])
-@login_required
-def get_motor_status():
-    """Get current motor speed and status"""
-    try:
-        device_doc = db.collection("devices").document("ESP32_001").get()
-        if device_doc.exists:
-            data = device_doc.to_dict()
-            return jsonify({
-                "status": "success",
-                "motor_speed": data.get("motor_speed", 0),
-                "motor_status": data.get("motor_status", "off")
-            }), 200
-        return jsonify({"status": "success", "motor_speed": 0, "motor_status": "off"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
 # ========== FEEDER CONTROL ==========
 
 @app.route("/control_feeder", methods=["POST"])
@@ -456,7 +470,7 @@ def control_feeder():
         data = request.get_json() or request.form
         action = data.get("action")
         speed = data.get("speed", 50)
-        
+
         if action == "off":
             db.collection("devices").document("ESP32_001").set({
                 "feeder_speed": 0,
@@ -464,7 +478,7 @@ def control_feeder():
                 "updatedAt": datetime.utcnow()
             }, merge=True)
             return jsonify({"status": "success", "message": "Feeder turned OFF"}), 200
-            
+
         elif action == "on":
             db.collection("devices").document("ESP32_001").set({
                 "feeder_speed": int(speed),
@@ -472,19 +486,19 @@ def control_feeder():
                 "updatedAt": datetime.utcnow()
             }, merge=True)
             return jsonify({"status": "success", "message": f"Feeder turned ON at {speed}%"}), 200
-            
+
         elif action == "set_speed":
             speed_value = int(speed)
             if speed_value < 0 or speed_value > 100:
                 return jsonify({"status": "error", "message": "Speed must be 0-100"}), 400
-            
+
             db.collection("devices").document("ESP32_001").set({
                 "feeder_speed": speed_value,
                 "feeder_status": "on" if speed_value > 0 else "off",
                 "updatedAt": datetime.utcnow()
             }, merge=True)
             return jsonify({"status": "success", "message": f"Feeder speed set to {speed_value}%"}), 200
-        
+
         return jsonify({"status": "error", "message": "Invalid action"}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -510,7 +524,6 @@ def get_feeding_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== FEEDING SCHEDULE ==========
 
 @app.route("/save_feeding_schedule", methods=["POST"])
@@ -522,10 +535,10 @@ def save_feeding_schedule():
         first_feed = data.get("first_feed")
         second_feed = data.get("second_feed")
         duration = data.get("duration")
-        
+
         if not first_feed or not second_feed or not duration:
             return jsonify({"status": "error", "message": "All fields required"}), 400
-        
+
         db.collection("devices").document("ESP32_001").set({
             "feeding_schedule": {
                 "first_feed": first_feed,
@@ -535,13 +548,11 @@ def save_feeding_schedule():
             "schedule_enabled": True,
             "updatedAt": datetime.utcnow()
         }, merge=True)
-        
+
         return jsonify({"status": "success", "message": "Feeding schedule saved"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-@app.route("/save_feeding_schedule", methods=["POST"])
 @app.route("/get_feeding_schedule_info", methods=["GET"])
 @login_required
 def get_feeding_schedule_info():
