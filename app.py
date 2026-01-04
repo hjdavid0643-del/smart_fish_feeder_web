@@ -312,7 +312,7 @@ def control():
 @app.route("/export_pdf")
 @login_required
 def export_pdf():
-     """Generate PDF report with sensor readings"""
+    """Generate PDF report with sensor readings"""
     try:
         readings_ref = (
             db.collection("devices")
@@ -392,6 +392,7 @@ def export_pdf():
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== MOSFET MOTOR CONTROL ==========
 
