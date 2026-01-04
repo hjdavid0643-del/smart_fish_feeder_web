@@ -407,8 +407,9 @@ def control_motor():
         
         if action == "off":
             db.collection("devices").document("ESP32_001").set({
-                "motor_speed": 0,
-                "motor_status": "off",
+                "motor_speed": data.get("motor_speed", 0),
+            "motor_status": data.get("motor_status", "off")
+
                 "updatedAt": datetime.utcnow()
             }, merge=True)
             return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
@@ -456,7 +457,7 @@ def get_motor_status():
 
 # ========== FEEDER CONTROL ==========
 
-@app.route("/control_feeding", methods=["POST"])
+@app.route("/control_feeder", methods=["POST"])
 @login_required
 def control_feeder():
     """Control automatic feeder via MOSFET"""
@@ -548,6 +549,8 @@ def save_feeding_schedule():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+@app.route("/save_feeding_schedule", methods=["POST"])
 @app.route("/get_feeding_schedule_info", methods=["GET"])
 @login_required
 def get_feeding_schedule_info():
