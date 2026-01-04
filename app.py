@@ -309,10 +309,10 @@ def control():
 
 # ========== PDF EXPORT ==========
 
-@app.route("/pdf")
+@app.route("/export_pdf")
 @login_required
 def export_pdf():
-    """Generate PDF report with sensor readings"""
+     """Generate PDF report with sensor readings"""
     try:
         readings_ref = (
             db.collection("devices")
