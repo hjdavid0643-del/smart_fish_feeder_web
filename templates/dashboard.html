@@ -13,9 +13,7 @@
             --red: #e53935;
             --orange: #ff7043;
         }
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
         body, html {
             margin: 0;
             padding: 0;
@@ -47,9 +45,7 @@
             text-decoration: none;
             white-space: nowrap;
         }
-        .logout-btn:hover {
-            background-color: #c62828;
-        }
+        .logout-btn:hover { background-color: #c62828; }
         .container {
             width: 100%;
             max-width: 1100px;
@@ -103,31 +99,14 @@
             justify-content: center;
             box-shadow: 0 3px 6px rgba(141, 6, 178, 0.305);
         }
-        .btn-view {
-            background-color: #27beaf;
-        }
-        .btn-view.active {
-            background-color: #098476;
-        }
-        .btn-refresh {
-            background-color: #196cbf;
-        }
-        .btn-refresh:hover {
-            background-color: var(--blue-dark);
-        }
-        .btn-view:hover {
-            background-color: #08d6c1;
-        }
-        .btn-pdf {
-            background-color: #176c7a;
-        }
-        .btn-pdf:hover {
-            background-color: #0ca2b9;
-        }
-        .table-wrapper {
-            width: 100%;
-            overflow-x: auto;
-        }
+        .btn-view { background-color: #27beaf; }
+        .btn-view.active { background-color: #098476; }
+        .btn-refresh { background-color: #196cbf; }
+        .btn-refresh:hover { background-color: var(--blue-dark); }
+        .btn-view:hover { background-color: #08d6c1; }
+        .btn-pdf { background-color: #176c7a; }
+        .btn-pdf:hover { background-color: #0ca2b9; }
+        .table-wrapper { width: 100%; overflow-x: auto; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -155,10 +134,8 @@
         @media (min-width: 768px) {
             .chart-wrapper { padding: 20px; }
         }
-        #historicalSection {
-            margin-top: 6px;
-        }
-        
+        #historicalSection { margin-top: 6px; }
+
         /* Control Section Styles */
         .control-section {
             background: rgba(0, 0, 0, 0.15);
@@ -208,9 +185,7 @@
             background: linear-gradient(135deg, #c82333, #a71d2a);
             transform: translateY(-2px);
         }
-        .speed-control {
-            margin-bottom: 15px;
-        }
+        .speed-control { margin-bottom: 15px; }
         .speed-control label {
             display: block;
             margin-bottom: 8px;
@@ -252,9 +227,7 @@
             font-weight: bold;
             box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.1);
         }
-        .status-box span {
-            color: #ffc107;
-        }
+        .status-box span { color: #ffc107; }
         .schedule-inputs {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -284,400 +257,322 @@
     </style>
 </head>
 <body>
-    <div class="page-wrap">
+<div class="page-wrap">
 
-        <!-- Top bar -->
-        <div class="top-bar">
-            <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
-        </div>
-
-        <!-- Main dashboard -->
-        <div class="container">
-            <h1>🐟 Smart Fish Feeder Dashboard</h1>
-
-            <!-- Top buttons -->
-            <div class="top-buttons">
-                <a class="btn btn-pdf" href="/export_pdf" download>📥 Download PDF</a>
-                <button id="btnHistorical" class="btn btn-view" type="button">
-                    View Historical Data
-                </button>
-                <button class="btn btn-refresh" type="button" onclick="location.reload();">
-                    Refresh
-                </button>
-            </div>
-
-            <!-- Status summary -->
-            <div class="summary" style="background-color: {{ alert_color }};">
-                {{ summary }}
-            </div>
-
-            <!-- Latest readings table -->
-            <h2>Latest Sensor Readings (Last 10)</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>Temperature (°C)</th>
-                            <th>pH</th>
-                            <th>Ammonia (ppm)</th>
-                            <th>Turbidity (NTU)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for r in readings %}
-                        <tr>
-                            <td>{{ r.createdAt }}</td>
-                            <td>{{ r.temperature }}</td>
-                            <td>{{ r.ph }}</td>
-                            <td>{{ r.ammonia }}</td>
-                            <td>{{ r.turbidity }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Sensor Trends chart -->
-            <h2>Sensor Trends</h2>
-            <div class="chart-wrapper">
-                <canvas id="sensorChart"></canvas>
-            </div>
-
-            <!-- MOSFET 1: FEEDING CONTROL -->
-            <div class="control-section">
-                <h2 style="text-align: center; margin-bottom: 20px;">🍽️ MOSFET Feeding Control</h2>
-                
-                <!-- Manual Feed -->
-                <div style="margin-bottom: 30px;">
-                    <h3 style="font-size: 18px; margin-bottom: 15px;">Manual Feeding</h3>
-                    <div class="control-buttons">
-                        <button class="btn-control-on" onclick="feedingControl('on')">
-                            ▶ Feeder ON
-                        </button>
-                        <button class="btn-control-off" onclick="feedingControl('off')">
-                            ⏹ Feeder OFF
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- Feed Speed Control -->
-                <div class="speed-control">
-                    <label>Feed Speed: <span id="feed-speed-display">50</span>%</label>
-                    <input type="range" class="speed-slider" id="feed-speed-slider" min="0" max="100" value="50" 
-                           oninput="document.getElementById('feed-speed-display').textContent = this.value">
-                    <button class="btn-set" onclick="setFeedSpeed()">
-                        ⚡ Set Feed Speed
-                    </button>
-                </div>
-                
-                <div class="status-box">
-                    Feed Speed: <span id="current-feed-speed">0</span>% | 
-                    Status: <span id="feed-status-text">OFF</span>
-                </div>
-                
-                <!-- Automatic Schedule -->
-                <div class="schedule-box" style="margin-top: 20px;">
-                    <h3 style="font-size: 18px; margin-bottom: 15px;">⏰ Automatic Feeding Schedule</h3>
-                    
-                    <div class="schedule-inputs">
-                        <div class="input-group">
-                            <label>First Feed Time:</label>
-                            <input type="time" id="feedTime1" value="09:00">
-                        </div>
-                        <div class="input-group">
-                            <label>Second Feed Time:</label>
-                            <input type="time" id="feedTime2" value="16:00">
-                        </div>
-                        <div class="input-group">
-                            <label>Duration (seconds):</label>
-                            <input type="number" id="feedDuration" value="5" min="1" max="60">
-                        </div>
-                    </div>
-                    
-                    <button class="btn-set" onclick="saveSchedule()">
-                        💾 Save Schedule
-                    </button>
-                    
-                    <div id="scheduleStatus" class="status-box" style="margin-top: 15px; display: none;">
-                        <div style="margin-bottom: 5px;">📅 Current Schedule</div>
-                        <div id="currentSchedule">Not set</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- MOSFET 2: MOTOR CONTROL -->
-            <div class="control-section">
-                <h2 style="text-align: center; margin-bottom: 20px;">🔌 MOSFET Motor Control</h2>
-                
-                <div class="control-buttons">
-                    <button class="btn-control-on" onclick="motorControl('on')">
-                        ▶ Motor ON
-                    </button>
-                    <button class="btn-control-off" onclick="motorControl('off')">
-                        ⏹ Motor OFF
-                    </button>
-                </div>
-                
-                <div class="speed-control">
-                    <label>Motor Speed: <span id="rpm-display">50</span>%</label>
-                    <input type="range" class="speed-slider" id="rpm-slider" min="0" max="100" value="50" 
-                           oninput="document.getElementById('rpm-display').textContent = this.value">
-                    <button class="btn-set" onclick="setMotorSpeed()">
-                        ⚡ Set Speed
-                    </button>
-                </div>
-                
-                <div class="status-box">
-                    Motor RPM: <span id="current-rpm">0</span>% | 
-                    Status: <span id="motor-status-text">OFF</span>
-                </div>
-            </div>
-
-            <!-- Historical section -->
-            <div id="historicalSection" style="display:none;">
-                <h2>Historical Sensor Data</h2>
-                <div class="table-wrapper">
-                    <table id="historicalTable">
-                        <thead>
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>Temperature (°C)</th>
-                                <th>pH</th>
-                                <th>Ammonia (ppm)</th>
-                                <th>Turbidity (NTU)</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-
-        </div>
+    <div class="top-bar">
+        <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script>
-        // Chart setup
-        const labels = {{ time_labels | tojson }};
-        const tempData = {{ temp_values | tojson }};
-        const phData = {{ ph_values | tojson }};
-        const ammoniaData = {{ ammonia_values | tojson }};
-        const turbidityData = {{ turbidity_values | tojson }};
+    <div class="container">
+        <h1>🐟 Smart Fish Feeder Dashboard</h1>
 
-        const ctx = document.getElementById('sensorChart').getContext('2d');
-        const sensorChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {label: 'Temperature (°C)', data: tempData, borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.15)', tension: 0.3, pointRadius: 3},
-                    {label: 'pH', data: phData, borderColor: '#42a5f5', backgroundColor: 'rgba(66,165,245,0.15)', tension: 0.3, pointRadius: 3},
-                    {label: 'Ammonia (ppm)', data: ammoniaData, borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.15)', tension: 0.3, pointRadius: 3},
-                    {label: 'Turbidity (NTU)', data: turbidityData, borderColor: '#ffca28', backgroundColor: 'rgba(255,202,40,0.15)', tension: 0.3, pointRadius: 3}
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { position: 'top' } },
-                scales: {
-                    x: { title: { display: true, text: 'Time' } },
-                    y: { title: { display: true, text: 'Value' } }
-                }
+        <div class="top-buttons">
+            <a class="btn btn-pdf" href="/export_pdf" download>📥 Download PDF</a>
+            <button id="btnHistorical" class="btn btn-view" type="button">
+                View Historical Data
+            </button>
+            <button class="btn btn-refresh" type="button" onclick="location.reload();">
+                Refresh
+            </button>
+        </div>
+
+        <div class="summary" style="background-color: {{ alert_color }};">
+            {{ summary }}
+        </div>
+
+        <h2>Latest Sensor Readings (Last 10)</h2>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Temperature (°C)</th>
+                    <th>pH</th>
+                    <th>Ammonia (ppm)</th>
+                    <th>Turbidity (NTU)</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for r in readings %}
+                <tr>
+                    <td>{{ r.createdAt }}</td>
+                    <td>{{ r.temperature }}</td>
+                    <td>{{ r.ph }}</td>
+                    <td>{{ r.ammonia }}</td>
+                    <td>{{ r.turbidity }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Sensor Trends</h2>
+        <div class="chart-wrapper">
+            <canvas id="sensorChart"></canvas>
+        </div>
+
+        <!-- MOSFET 1: FEEDING CONTROL -->
+        <div class="control-section">
+            <h2 style="text-align: center; margin-bottom: 20px;">🍽️ MOSFET Feeding Control</h2>
+
+            <div style="margin-bottom: 30px;">
+                <h3 style="font-size: 18px; margin-bottom: 15px;">Manual Feeding</h3>
+                <div class="control-buttons">
+                    <button class="btn-control-on" onclick="feedingControl('on')">▶ Feeder ON</button>
+                    <button class="btn-control-off" onclick="feedingControl('off')">⏹ Feeder OFF</button>
+                </div>
+            </div>
+
+            <div class="speed-control">
+                <label>Feed Speed: <span id="feed-speed-display">50</span>%</label>
+                <input type="range" class="speed-slider" id="feed-speed-slider" min="0" max="100" value="50"
+                       oninput="document.getElementById('feed-speed-display').textContent = this.value">
+                <button class="btn-set" onclick="setFeedSpeed()">⚡ Set Feed Speed</button>
+            </div>
+
+            <div class="status-box">
+                Feed Speed: <span id="current-feed-speed">0</span>% |
+                Status: <span id="feed-status-text">OFF</span>
+            </div>
+
+            <div class="schedule-box" style="margin-top: 20px;">
+                <h3 style="font-size: 18px; margin-bottom: 15px;">⏰ Automatic Feeding Schedule</h3>
+
+                <div class="schedule-inputs">
+                    <div class="input-group">
+                        <label>First Feed Time:</label>
+                        <input type="time" id="feedTime1" value="09:00">
+                    </div>
+                    <div class="input-group">
+                        <label>Second Feed Time:</label>
+                        <input type="time" id="feedTime2" value="16:00">
+                    </div>
+                    <div class="input-group">
+                        <label>Duration (seconds):</label>
+                        <input type="number" id="feedDuration" value="5" min="1" max="60">
+                    </div>
+                </div>
+
+                <button class="btn-set" onclick="saveSchedule()">💾 Save Schedule</button>
+
+                <div id="scheduleStatus" class="status-box" style="margin-top: 15px; display: none;">
+                    <div style="margin-bottom: 5px;">📅 Current Schedule</div>
+                    <div id="currentSchedule">Not set</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOSFET 2: MOTOR CONTROL -->
+        <div class="control-section">
+            <h2 style="text-align: center; margin-bottom: 20px;">🔌 MOSFET Motor Control</h2>
+
+            <div class="control-buttons">
+                <button class="btn-control-on" onclick="motorControl('on')">▶ Motor ON</button>
+                <button class="btn-control-off" onclick="motorControl('off')">⏹ Motor OFF</button>
+            </div>
+
+            <div class="speed-control">
+                <label>Motor Speed: <span id="rpm-display">50</span>%</label>
+                <input type="range" class="speed-slider" id="rpm-slider" min="0" max="100" value="50"
+                       oninput="document.getElementById('rpm-display').textContent = this.value">
+                <button class="btn-set" onclick="setMotorSpeed()">⚡ Set Speed</button>
+            </div>
+
+            <div class="status-box">
+                Motor RPM: <span id="current-rpm">0</span>% |
+                Status: <span id="motor-status-text">OFF</span>
+            </div>
+        </div>
+
+        <!-- Historical section -->
+        <div id="historicalSection" style="display:none;">
+            <h2>Historical Sensor Data</h2>
+            <div class="table-wrapper">
+                <table id="historicalTable">
+                    <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Temperature (°C)</th>
+                        <th>pH</th>
+                        <th>Ammonia (ppm)</th>
+                        <th>Turbidity (NTU)</th>
+                    </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Chart setup
+    const labels = {{ time_labels | tojson }};
+    const tempData = {{ temp_values | tojson }};
+    const phData = {{ ph_values | tojson }};
+    const ammoniaData = {{ ammonia_values | tojson }};
+    const turbidityData = {{ turbidity_values | tojson }};
+
+    const ctx = document.getElementById('sensorChart').getContext('2d');
+    const sensorChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {label: 'Temperature (°C)', data: tempData, borderColor: '#ff7043', backgroundColor: 'rgba(255,112,67,0.15)', tension: 0.3, pointRadius: 3},
+                {label: 'pH', data: phData, borderColor: '#42a5f5', backgroundColor: 'rgba(66,165,245,0.15)', tension: 0.3, pointRadius: 3},
+                {label: 'Ammonia (ppm)', data: ammoniaData, borderColor: '#66bb6a', backgroundColor: 'rgba(102,187,106,0.15)', tension: 0.3, pointRadius: 3},
+                {label: 'Turbidity (NTU)', data: turbidityData, borderColor: '#ffca28', backgroundColor: 'rgba(255,202,40,0.15)', tension: 0.3, pointRadius: 3}
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                x: { title: { display: true, text: 'Time' } },
+                y: { title: { display: true, text: 'Value' } }
             }
-        });
-
-        function resizeChart() {
-            const canvas = document.getElementById('sensorChart');
-            canvas.height = window.innerWidth < 600 ? 260 : 140;
-            sensorChart.resize();
         }
-        window.addEventListener('load', resizeChart);
-        window.addEventListener('resize', resizeChart);
+    });
 
-        // Historical Data Toggle
-        const btnHistorical = document.getElementById('btnHistorical');
-        const historicalSection = document.getElementById('historicalSection');
-        const historicalTableBody = document.querySelector('#historicalTable tbody');
-        let historicalLoaded = false;
+    function resizeChart() {
+        const canvas = document.getElementById('sensorChart');
+        canvas.height = window.innerWidth < 600 ? 260 : 140;
+        sensorChart.resize();
+    }
+    window.addEventListener('load', resizeChart);
+    window.addEventListener('resize', resizeChart);
 
-        btnHistorical.addEventListener('click', async () => {
-            if (historicalSection.style.display === 'none') {
-                historicalSection.style.display = 'block';
-                btnHistorical.classList.add('active');
-                btnHistorical.textContent = 'Hide Historical Data';
+    // Historical Data Toggle
+    const btnHistorical = document.getElementById('btnHistorical');
+    const historicalSection = document.getElementById('historicalSection');
+    const historicalTableBody = document.querySelector('#historicalTable tbody');
+    let historicalLoaded = false;
 
-                if (!historicalLoaded) {
-                    try {
-                        const res = await fetch('/historical');
-                        const data = await res.json();
-                        if (data.status === 'success') {
-                            historicalTableBody.innerHTML = '';
-                            data.readings.forEach(row => {
-                                const tr = document.createElement('tr');
-                                tr.innerHTML = `<td>${row.createdAt}</td><td>${row.temperature}</td><td>${row.ph}</td><td>${row.ammonia}</td><td>${row.turbidity}</td>`;
-                                historicalTableBody.appendChild(tr);
-                            });
-                            historicalLoaded = true;
-                        }
-                    } catch (err) {
-                        console.error('Error loading historical data', err);
+    btnHistorical.addEventListener('click', async () => {
+        if (historicalSection.style.display === 'none') {
+            historicalSection.style.display = 'block';
+            btnHistorical.classList.add('active');
+            btnHistorical.textContent = 'Hide Historical Data';
+
+            if (!historicalLoaded) {
+                try {
+                    const res = await fetch('/historical');
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        historicalTableBody.innerHTML = '';
+                        data.readings.forEach(row => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `<td>${row.createdAt}</td><td>${row.temperature}</td><td>${row.ph}</td><td>${row.ammonia}</td><td>${row.turbidity}</td>`;
+                            historicalTableBody.appendChild(tr);
+                        });
+                        historicalLoaded = true;
                     }
+                } catch (err) {
+                    console.error('Error loading historical data', err);
                 }
-            } else {
-                historicalSection.style.display = 'none';
-                btnHistorical.classList.remove('active');
-                btnHistorical.textContent = 'View Historical Data';
             }
-        });
+        } else {
+            historicalSection.style.display = 'none';
+            btnHistorical.classList.remove('active');
+            btnHistorical.textContent = 'View Historical Data';
+        }
+    });
 
-        // ========== FEEDING CONTROL (MOSFET 1) ==========
-        
-        function feedingControl(action) {
-            fetch('/control_feeding', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            })
+    // ========== FEEDING CONTROL (MOSFET 1) ==========
+    function feedingControl(action) {
+        fetch('/control_feeder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
+            if (data.status === 'success') loadFeedingStatus();
+        })
+        .catch(error => alert('❌ Request failed: ' + error));
+    }
+
+    function setFeedSpeed() {
+        const speed = document.getElementById('feed-speed-slider').value;
+        fetch('/control_feeder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'set_speed', speed: speed})
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
+            if (data.status === 'success') loadFeedingStatus();
+        })
+        .catch(error => alert('❌ Request failed: ' + error));
+    }
+
+    function loadFeedingStatus() {
+        fetch('/get_feeding_status')
             .then(response => response.json())
             .then(data => {
-                alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
-                if(data.status === 'success') loadFeedingStatus();
-            })
-            .catch(error => alert('❌ Request failed: ' + error));
-        }
-
-        function setFeedSpeed() {
-            const speed = document.getElementById('feed-speed-slider').value;
-            fetch('/control_feeding', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: 'set_speed', speed: speed})
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
-                if(data.status === 'success') loadFeedingStatus();
-            })
-            .catch(error => alert('❌ Request failed: ' + error));
-        }
-
-        function loadFeedingStatus() {
-            fetch('/get_feeder_status')
-                .then(response => response.json())
-            .then(data => {
-                if(data.status === 'success') {
-                    document.getElementById('current-feed-speed').textContent = data.feed_speed;
+                if (data.status === 'success') {
+                    document.getElementById('current-feed-speed').textContent = data.feeder_speed;
                     const statusSpan = document.getElementById('feed-status-text');
-                    statusSpan.textContent = data.feed_status.toUpperCase();
-                    statusSpan.style.color = data.feed_status === 'on' ? '#28a745' : '#dc3545';
+                    statusSpan.textContent = data.feeder_status.toUpperCase();
+                    statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
                 }
             })
             .catch(error => console.error('Failed to load feeding status:', error));
-        }
+    }
 
-        async function loadFeedingSchedule() {
-            try {
-                const res = await fetch('/get_feeding_schedule');
-                const data = await res.json();
-                if(data.status === 'success' && data.schedule) {
-                    document.getElementById('feedTime1').value = data.schedule.time1 || '09:00';
-                    document.getElementById('feedTime2').value = data.schedule.time2 || '4:00';
-                    document.getElementById('feedDuration').value = data.schedule.duration || 5;
-                    
-                    if(data.schedule.enabled) {
-                        document.getElementById('scheduleStatus').style.display = 'block';
-                        document.getElementById('currentSchedule').innerHTML = 
-                            `${data.schedule.time1} & ${data.schedule.time2}<br><span style="font-size: 14px; color: #ddd;">(${data.schedule.duration}s each)</span>`;
-                    }
-                }
-            } catch(e) {
-                console.error('Failed to load schedule', e);
-            }
-        }
+    // ========== MOTOR CONTROL (MOSFET 2) ==========
+    function motorControl(action) {
+        fetch('/control_motor', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: action})
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
+            if (data.status === 'success') loadMotorStatus();
+        })
+        .catch(error => alert('❌ Request failed: ' + error));
+    }
 
-        // when loading
-          const schedule = data.schedule || {};
-          document.getElementById('feedTime1').value = schedule.first_feed || '09:00';
-          document.getElementById('feedTime2').value = schedule.second_feed || '4:00';
-          document.getElementById('feedDuration').value = schedule.duration || 5;
+    function setMotorSpeed() {
+        const rpm = document.getElementById('rpm-slider').value;
+        fetch('/control_motor', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'set_speed', speed: rpm})
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
+            if (data.status === 'success') loadMotorStatus();
+        })
+        .catch(error => alert('❌ Request failed: ' + error));
+    }
 
-            if(!time1 || !time2) {
-                alert('❌ Please select both feed times');
-                return;
-            }
-            
-            fetch('/feed/schedule', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({time1, time2, duration: parseInt(duration)})
-            })
+    function loadMotorStatus() {
+        fetch('/get_motor_status')
             .then(response => response.json())
             .then(data => {
-                if(data.status === 'success') {
-                    alert('✅ Schedule saved!');
-                    document.getElementById('scheduleStatus').style.display = 'block';
-                    document.getElementById('currentSchedule').innerHTML = 
-                        `${time1} & ${time2}<br><span style="font-size: 14px; color: #ddd;">(${duration}s each)</span>`;
-                } else {
-                    alert('❌ Failed: ' + data.message);
-                }
-            })
-            .catch(error => alert('❌ Request failed: ' + error));
-        }
-
-        // ========== MOTOR CONTROL (MOSFET 2) ==========
-        
-        function motorControl(action) {
-            fetch('/control_motor', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: action})
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
-                if(data.status === 'success') loadMotorStatus();
-            })
-            .catch(error => alert('❌ Request failed: ' + error));
-        }
-
-        function setMotorSpeed() {
-            const rpm = document.getElementById('rpm-slider').value;
-            fetch('/control_motor', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({action: 'set_speed', rpm: rpm})
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
-                if(data.status === 'success') loadMotorStatus();
-            })
-            .catch(error => alert('❌ Request failed: ' + error));
-        }
-
-        function loadMotorStatus() {
-            fetch('/get_feeder_status')
-                .then(response => response.json())
-            .then(data => {
-                if(data.status === 'success') {
-                   document.getElementById('current-feed-speed').textContent = data.feeder_speed;
-                  statusSpan.textContent = data.feeder_status.toUpperCase();
-              statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
-
-
+                if (data.status === 'success') {
+                    document.getElementById('current-rpm').textContent = data.motor_speed;
+                    const statusSpan = document.getElementById('motor-status-text');
+                    statusSpan.textContent = data.motor_status.toUpperCase();
+                    statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
                 }
             })
             .catch(error => console.error('Failed to load motor status:', error));
-        }
+    }
 
-        // Load initial data
-        loadFeedingSchedule();
-        loadFeedingStatus();
-        loadMotorStatus();
-        setInterval(() => { loadFeedingStatus(); loadMotorStatus(); }, 5000);
-    </script>
+    // Load initial data
+    loadFeedingStatus();
+    loadMotorStatus();
+    setInterval(() => { loadFeedingStatus(); loadMotorStatus(); }, 5000);
+</script>
 </body>
 </html>
