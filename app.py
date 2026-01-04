@@ -497,9 +497,9 @@ def control_feeder():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/get_feeder_status", methods=["GET"])
+@app.route("/get_feeding_status", methods=["GET"])
 @login_required
-def get_feeder_status():
+def get_feeding_status():
     """Get current feeder speed and status"""
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
@@ -510,9 +510,14 @@ def get_feeder_status():
                 "feeder_speed": data.get("feeder_speed", 0),
                 "feeder_status": data.get("feeder_status", "off")
             }), 200
-        return jsonify({"status": "success", "feeder_speed": 0, "feeder_status": "off"}), 200
+        return jsonify({
+            "status": "success",
+            "feeder_speed": 0,
+            "feeder_status": "off"
+        }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== FEEDING SCHEDULE ==========
 
