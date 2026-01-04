@@ -564,8 +564,8 @@
         }
 
         function loadFeedingStatus() {
-            fetch('/get_feeding_status')
-            .then(response => response.json())
+            fetch('/get_feeder_status')
+                .then(response => response.json())
             .then(data => {
                 if(data.status === 'success') {
                     document.getElementById('current-feed-speed').textContent = data.feed_speed;
@@ -583,7 +583,7 @@
                 const data = await res.json();
                 if(data.status === 'success' && data.schedule) {
                     document.getElementById('feedTime1').value = data.schedule.time1 || '09:00';
-                    document.getElementById('feedTime2').value = data.schedule.time2 || '16:00';
+                    document.getElementById('feedTime2').value = data.schedule.time2 || '4:00';
                     document.getElementById('feedDuration').value = data.schedule.duration || 5;
                     
                     if(data.schedule.enabled) {
@@ -597,11 +597,12 @@
             }
         }
 
-        function saveSchedule() {
-            const time1 = document.getElementById('feedTime1').value;
-            const time2 = document.getElementById('feedTime2').value;
-            const duration = document.getElementById('feedDuration').value;
-            
+        // when loading
+          const schedule = data.schedule || {};
+          document.getElementById('feedTime1').value = schedule.first_feed || '09:00';
+          document.getElementById('feedTime2').value = schedule.second_feed || '4:00';
+          document.getElementById('feedDuration').value = schedule.duration || 5;
+
             if(!time1 || !time2) {
                 alert('❌ Please select both feed times');
                 return;
@@ -658,14 +659,15 @@
         }
 
         function loadMotorStatus() {
-            fetch('/get_motor_status')
-            .then(response => response.json())
+            fetch('/get_feeder_status')
+                .then(response => response.json())
             .then(data => {
                 if(data.status === 'success') {
-                    document.getElementById('current-rpm').textContent = data.motor_rpm;
-                    const statusSpan = document.getElementById('motor-status-text');
-                    statusSpan.textContent = data.motor_status.toUpperCase();
-                    statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
+                   document.getElementById('current-feed-speed').textContent = data.feeder_speed;
+                  statusSpan.textContent = data.feeder_status.toUpperCase();
+              statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
+
+
                 }
             })
             .catch(error => console.error('Failed to load motor status:', error));
