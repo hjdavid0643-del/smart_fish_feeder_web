@@ -144,7 +144,7 @@ def change_password(token):
 
     return render_template("change.html")
 
-# ========== DASHBOARD ==========
+# ========== DASHBOARD ===========
 
 @app.route("/dashboard")
 @login_required
@@ -312,7 +312,7 @@ def control_feeding_page():
             "control.html",
             error=str(e),
             readings=[],
-            all_readings[],
+            all_readings=[],
             summary="Error loading data",
             chart_labels=[],
             chart_temp=[],
