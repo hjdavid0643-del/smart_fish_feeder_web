@@ -1,4 +1,7 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import (
+    Flask, render_template, request, redirect,
+    url_for, session, jsonify, send_file
+)
 from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -19,7 +22,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key-change-this-in-production")
 CORS(app)
 
-# Firebase setup
+# ========== FIREBASE SETUP ==========
+
 firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
 if firebase_creds:
     import json
@@ -33,6 +37,8 @@ firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 serializer = URLSafeTimedSerializer(app.secret_key)
+
+# ========== HELPERS ==========
 
 def login_required(f):
     @wraps(f)
@@ -155,13 +161,14 @@ def dashboard():
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
+        created = doc.get("createdAt")
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
             "ammonia": doc.get("ammonia"),
             "turbidity": doc.get("turbidity"),
-            "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
-            if doc.get("createdAt") else "",
+            "createdAt": created_str,
         })
 
     data = list(reversed(data))
@@ -220,13 +227,14 @@ def mosfet():
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
+        created = doc.get("createdAt")
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
             "ammonia": doc.get("ammonia"),
             "turbidity": doc.get("turbidity"),
-            "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
-            if doc.get("createdAt") else "",
+            "createdAt": created_str,
         })
 
     return render_template("mosfet.html", readings=data)
@@ -246,12 +254,13 @@ def control_feeding_page():
         readings = []
         for doc_snap in readings_ref.stream():
             d = doc_snap.to_dict()
+            created = d.get("createdAt")
             readings.append({
                 "temperature": d.get("temperature"),
                 "ph": d.get("ph"),
                 "ammonia": d.get("ammonia"),
                 "turbidity": d.get("turbidity"),
-                "createdAt": d.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if d.get("createdAt") else ""
+                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             })
 
         all_readings_ref = (
@@ -263,12 +272,13 @@ def control_feeding_page():
         all_readings = []
         for doc_snap in all_readings_ref.stream():
             d = doc_snap.to_dict()
+            created = d.get("createdAt")
             all_readings.append({
                 "temperature": d.get("temperature"),
                 "ph": d.get("ph"),
                 "ammonia": d.get("ammonia"),
                 "turbidity": d.get("turbidity"),
-                "createdAt": d.get("createdAt").strftime("%Y-%m-%d %H:%M:%S") if d.get("createdAt") else ""
+                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             })
 
         chart_labels = []
@@ -302,7 +312,7 @@ def control_feeding_page():
             "control.html",
             error=str(e),
             readings=[],
-            all_readings=[],
+            all_readings[],
             summary="Error loading data",
             chart_labels=[],
             chart_temp=[],
@@ -401,7 +411,6 @@ def export_pdf():
 @app.route("/control_motor", methods=["POST"])
 @login_required
 def control_motor():
-    """Control water pump motor via MOSFET PWM"""
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -442,7 +451,6 @@ def control_motor():
 @app.route("/get_motor_status", methods=["GET"])
 @login_required
 def get_motor_status():
-    """Get current motor speed and status"""
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -465,7 +473,6 @@ def get_motor_status():
 @app.route("/control_feeder", methods=["POST"])
 @login_required
 def control_feeder():
-    """Control automatic feeder via MOSFET"""
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -506,7 +513,6 @@ def control_feeder():
 @app.route("/get_feeding_status", methods=["GET"])
 @login_required
 def get_feeding_status():
-    """Get current feeder speed and status"""
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -529,7 +535,6 @@ def get_feeding_status():
 @app.route("/save_feeding_schedule", methods=["POST"])
 @login_required
 def save_feeding_schedule():
-    """Save automatic feeding schedule"""
     try:
         data = request.get_json() or request.form
         first_feed = data.get("first_feed")
@@ -556,7 +561,6 @@ def save_feeding_schedule():
 @app.route("/get_feeding_schedule_info", methods=["GET"])
 @login_required
 def get_feeding_schedule_info():
-    """Get current feeding schedule"""
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -571,7 +575,7 @@ def get_feeding_schedule_info():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ========== API ROUTES ==========
+# ========== SENSOR API ROUTES ==========
 
 @app.route("/add_reading", methods=["POST"])
 def add_reading():
@@ -599,6 +603,50 @@ def add_reading():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/latest_readings", methods=["GET"])
+def api_latest_readings():
+    """Return latest readings for dashboard auto-refresh"""
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+
+        readings_cursor = readings_ref.stream()
+        data = []
+        for r in readings_cursor:
+            doc = r.to_dict()
+            created = doc.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            data.append({
+                "temperature": doc.get("temperature"),
+                "ph": doc.get("ph"),
+                "ammonia": doc.get("ammonia"),
+                "turbidity": doc.get("turbidity"),
+                "createdAt": created_str,
+            })
+
+        data = list(reversed(data))
+
+        labels = [r["createdAt"] for r in data]
+        temp = [r["temperature"] for r in data]
+        ph = [r["ph"] for r in data]
+        ammonia = [r["ammonia"] for r in data]
+        turbidity = [r["turbidity"] for r in data]
+
+        return jsonify({
+            "labels": labels,
+            "temp": temp,
+            "ph": ph,
+            "ammonia": ammonia,
+            "turbidity": turbidity
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/historical", methods=["GET"])
 def historical():
     try:
@@ -613,13 +661,14 @@ def historical():
         data = []
         for r in readings:
             doc = r.to_dict()
+            created = doc.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             data.append({
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
                 "ammonia": doc.get("ammonia"),
                 "turbidity": doc.get("turbidity"),
-                "createdAt": doc.get("createdAt").strftime("%Y-%m-%d %H:%M:%S")
-                if doc.get("createdAt") else "",
+                "createdAt": created_str,
             })
 
         return jsonify({"status": "success", "readings": data}), 200
