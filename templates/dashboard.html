@@ -481,6 +481,35 @@
         }
     });
 
+    // ========= AUTO‑UPDATE LATEST SENSOR TABLE =========
+    function refreshSensorTable() {
+        fetch('/api/latest_readings')
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.querySelector('.table-wrapper table tbody');
+                tbody.innerHTML = '';
+
+                const total = data.labels.length;
+                const start = Math.max(0, total - 10);
+
+                for (let i = total - 1; i >= start; i--) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${data.labels[i] || ''}</td>
+                        <td>${data.temp[i] != null ? data.temp[i].toFixed(2) : ''}</td>
+                        <td>${data.ph[i] != null ? data.ph[i].toFixed(2) : ''}</td>
+                        <td>${data.ammonia[i] != null ? data.ammonia[i].toFixed(2) : ''}</td>
+                        <td>${data.turbidity[i] != null ? data.turbidity[i].toFixed(6) : ''}</td>
+                    `;
+                    tbody.appendChild(row);
+                }
+            })
+            .catch(err => console.error('Error updating latest table:', err));
+    }
+
+    window.addEventListener('load', refreshSensorTable);
+    setInterval(refreshSensorTable, 10000);  // every 10s
+
     // ========== FEEDING CONTROL (MOSFET 1) ==========
     function feedingControl(action) {
         fetch('/control_feeder', {
@@ -569,7 +598,7 @@
             .catch(error => console.error('Failed to load motor status:', error));
     }
 
-    // Load initial data
+    // Load initial control status
     loadFeedingStatus();
     loadMotorStatus();
     setInterval(() => { loadFeedingStatus(); loadMotorStatus(); }, 5000);
