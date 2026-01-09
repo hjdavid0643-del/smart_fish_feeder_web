@@ -29,14 +29,12 @@ if firebase_creds:
     import json
     cred = credentials.Certificate(json.loads(firebase_creds))
 else:
-    # On Render, firebasekey.json is added as a Secret File
-    FIREBASE_KEY_PATH = "/etc/secrets/firebasekey.json"
+    # On Render, the Admin SDK JSON is added as a Secret File
+    FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-a724074a37.json"
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
 firebase_admin.initialize_app(cred)
 db = firestore.client()
-
-serializer = URLSafeTimedSerializer(app.secret_key)
 
 # ========== HELPERS ==========
 
