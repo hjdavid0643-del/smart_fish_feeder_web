@@ -36,6 +36,8 @@ else:
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
+serializer = URLSafeTimedSerializer(app.secret_key)
+
 # ========== HELPERS ==========
 
 def login_required(f):
@@ -142,7 +144,7 @@ def change_password(token):
 
     return render_template("change.html")
 
-# ========== DASHBOARD ===========
+# ========== DASHBOARD ==========
 
 @app.route("/dashboard")
 @login_required
@@ -603,7 +605,6 @@ def add_reading():
 
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
-    """Return latest readings for dashboard auto-refresh"""
     try:
         readings_ref = (
             db.collection("devices")
