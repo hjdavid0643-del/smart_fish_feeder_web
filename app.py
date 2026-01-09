@@ -29,8 +29,8 @@ if firebase_creds:
     import json
     cred = credentials.Certificate(json.loads(firebase_creds))
 else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    FIREBASE_KEY_PATH = os.path.join(BASE_DIR, "firebasekey.json")
+    # On Render, firebasekey.json is added as a Secret File
+    FIREBASE_KEY_PATH = "/etc/secrets/firebasekey.json"
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
 firebase_admin.initialize_app(cred)
@@ -674,6 +674,18 @@ def historical():
         return jsonify({"status": "success", "readings": data}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# ========== FIRESTORE TEST ROUTE ==========
+
+@app.route("/test_firestore")
+def test_firestore():
+    try:
+        doc = db.collection("devices").document("ESP32_001").get()
+        return jsonify({"status": "ok", "exists": doc.exists}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ========== HEALTH CHECK ==========
 
 @app.route("/ping", methods=["GET"])
 def ping():
