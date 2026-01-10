@@ -91,7 +91,6 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-# (optional) simple register retained
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
