@@ -63,9 +63,17 @@ def login():
         if not email or not password:
             return render_template("login.html", error="Please enter email and password")
 
-        users = db.collection("users").where("email", "==", email).limit(1).stream()
-        user_doc = next(users, None)
+        try:
+            users_ref = db.collection("users").where("email", "==", email).limit(1)
+            users = list(users_ref.stream())
+        except Exception as e:
+            print("Firestore error in /login:", e)
+            return render_template(
+                "login.html",
+                error="Login temporarily unavailable. Please try again later."
+            )
 
+        user_doc = users[0] if users else None
         if not user_doc:
             return render_template("login.html", error="Invalid email or password")
 
