@@ -37,6 +37,7 @@ db = firestore.client()
 
 serializer = URLSafeTimedSerializer(app.secret_key)
 
+
 # ========== HELPERS ==========
 
 def login_required(f):
@@ -47,11 +48,23 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+
+def format_timestamp(value):
+    """Safely format Firestore timestamp or return empty string."""
+    try:
+        if hasattr(value, "strftime"):
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        pass
+    return ""
+
+
 # ========== AUTH ROUTES ==========
 
 @app.route("/")
 def home():
     return redirect(url_for("login"))
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -78,10 +91,12 @@ def login():
 
     return render_template("login.html")
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -101,6 +116,7 @@ def register():
 
     return render_template("register.html")
 
+
 @app.route("/reset_password", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
@@ -119,6 +135,7 @@ def reset_password():
         return f"Password reset link: {reset_link}"
 
     return render_template("reset.html")
+
 
 @app.route("/change_password/<token>", methods=["GET", "POST"])
 def change_password(token):
@@ -143,6 +160,7 @@ def change_password(token):
 
     return render_template("change.html")
 
+
 # ========== DASHBOARD ==========
 
 @app.route("/dashboard")
@@ -153,15 +171,14 @@ def dashboard():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(30)   # reduced from 50
+        .limit(30)
     )
 
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
-        created = doc.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        created_str = format_timestamp(doc.get("createdAt"))
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
@@ -209,6 +226,7 @@ def dashboard():
         turbidity_values=turbidity_values,
     )
 
+
 # ========== MOSFET PAGE ==========
 
 @app.route("/mosfet")
@@ -219,15 +237,14 @@ def mosfet():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(30)   # reduced from 50
+        .limit(30)
     )
 
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
-        created = doc.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        created_str = format_timestamp(doc.get("createdAt"))
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
@@ -237,6 +254,7 @@ def mosfet():
         })
 
     return render_template("mosfet.html", readings=data)
+
 
 # ========== FEEDING CONTROL PAGE ==========
 
@@ -248,22 +266,21 @@ def control_feeding_page():
             db.collection("devices").document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)   # single limited query
+            .limit(30)
         )
 
         all_readings = []
         for doc_snap in readings_ref.stream():
             d = doc_snap.to_dict()
-            created = d.get("createdAt")
+            created_str = format_timestamp(d.get("createdAt"))
             all_readings.append({
                 "temperature": d.get("temperature"),
                 "ph": d.get("ph"),
                 "ammonia": d.get("ammonia"),
                 "turbidity": d.get("turbidity"),
-                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+                "createdAt": created_str,
             })
 
-        # latest 10 for the top table/chart
         readings = all_readings[:10]
 
         chart_labels = []
@@ -306,6 +323,7 @@ def control_feeding_page():
             chart_turbidity=[],
         )
 
+
 # ========== PDF EXPORT ==========
 
 @app.route("/export_pdf")
@@ -317,7 +335,7 @@ def export_pdf():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)   # reduced from 50
+            .limit(30)
         )
 
         readings_cursor = readings_ref.stream()
@@ -356,9 +374,9 @@ def export_pdf():
 
         table_data = [["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]]
         for r in data:
-            created = r["createdAt"].strftime("%Y-%m-%d %H:%M:%S") if r["createdAt"] else ""
+            created_str = format_timestamp(r.get("createdAt"))
             table_data.append([
-                created,
+                created_str,
                 "" if r["temperature"] is None else f"{r['temperature']:.2f}",
                 "" if r["ph"] is None else f"{r['ph']:.2f}",
                 "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
@@ -390,6 +408,7 @@ def export_pdf():
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== MOSFET MOTOR CONTROL ==========
 
@@ -433,6 +452,7 @@ def control_motor():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_motor_status", methods=["GET"])
 @login_required
 def get_motor_status():
@@ -452,6 +472,7 @@ def get_motor_status():
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== FEEDER CONTROL ==========
 
@@ -495,6 +516,7 @@ def control_feeder():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_feeding_status", methods=["GET"])
 @login_required
 def get_feeding_status():
@@ -514,6 +536,7 @@ def get_feeding_status():
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== FEEDING SCHEDULE ==========
 
@@ -543,6 +566,7 @@ def save_feeding_schedule():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_feeding_schedule_info", methods=["GET"])
 @login_required
 def get_feeding_schedule_info():
@@ -559,6 +583,7 @@ def get_feeding_schedule_info():
         return jsonify({"status": "success", "schedule": {}, "enabled": False}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== SENSOR API ROUTES ==========
 
@@ -588,6 +613,7 @@ def add_reading():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
     try:
@@ -596,15 +622,14 @@ def api_latest_readings():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)   # reduced from 50
+            .limit(30)
         )
 
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
             doc = r.to_dict()
-            created = doc.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            created_str = format_timestamp(doc.get("createdAt"))
             data.append({
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
@@ -631,6 +656,7 @@ def api_latest_readings():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/historical", methods=["GET"])
 def historical():
     try:
@@ -639,15 +665,14 @@ def historical():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(200)   # NEW: hard cap for history
+            .limit(200)
         )
 
         readings = readings_ref.stream()
         data = []
         for r in readings:
             doc = r.to_dict()
-            created = doc.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            created_str = format_timestamp(doc.get("createdAt"))
             data.append({
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
@@ -660,6 +685,7 @@ def historical():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # ========== FIRESTORE TEST ROUTE ==========
 
 @app.route("/test_firestore")
@@ -670,11 +696,13 @@ def test_firestore():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # ========== HEALTH CHECK ==========
 
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "message": "Server reachable"}), 200
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
