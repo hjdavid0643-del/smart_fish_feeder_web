@@ -29,7 +29,6 @@ if firebase_creds:
     import json
     cred = credentials.Certificate(json.loads(firebase_creds))
 else:
-    # Must match the Secret File mount path in Render
     FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-a724074a37.json"
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
@@ -154,7 +153,7 @@ def dashboard():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
+        .limit(30)   # reduced from 50
     )
 
     readings_cursor = readings_ref.stream()
@@ -220,7 +219,7 @@ def mosfet():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
+        .limit(30)   # reduced from 50
     )
 
     readings_cursor = readings_ref.stream()
@@ -249,28 +248,11 @@ def control_feeding_page():
             db.collection("devices").document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(10)
+            .limit(30)   # single limited query
         )
-        readings = []
-        for doc_snap in readings_ref.stream():
-            d = doc_snap.to_dict()
-            created = d.get("createdAt")
-            readings.append({
-                "temperature": d.get("temperature"),
-                "ph": d.get("ph"),
-                "ammonia": d.get("ammonia"),
-                "turbidity": d.get("turbidity"),
-                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-            })
 
-        all_readings_ref = (
-            db.collection("devices").document("ESP32_001")
-            .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
-        )
         all_readings = []
-        for doc_snap in all_readings_ref.stream():
+        for doc_snap in readings_ref.stream():
             d = doc_snap.to_dict()
             created = d.get("createdAt")
             all_readings.append({
@@ -280,6 +262,9 @@ def control_feeding_page():
                 "turbidity": d.get("turbidity"),
                 "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             })
+
+        # latest 10 for the top table/chart
+        readings = all_readings[:10]
 
         chart_labels = []
         chart_temp = []
@@ -332,7 +317,7 @@ def export_pdf():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
+            .limit(30)   # reduced from 50
         )
 
         readings_cursor = readings_ref.stream()
@@ -605,14 +590,13 @@ def add_reading():
 
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
-    """Return latest readings for dashboard auto-refresh"""
     try:
         readings_ref = (
             db.collection("devices")
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
+            .limit(30)   # reduced from 50
         )
 
         readings_cursor = readings_ref.stream()
@@ -655,6 +639,7 @@ def historical():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(200)   # NEW: hard cap for history
         )
 
         readings = readings_ref.stream()
