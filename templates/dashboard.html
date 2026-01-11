@@ -362,7 +362,7 @@
             </div>
         </div>
 
-        <!-- MOSFET 2: MOTOR CONTROL -->
+        <!-- MOSFET 2: MOTOR CONTROL (ESP32-1) -->
         <div class="control-section">
             <h2 style="text-align: center; margin-bottom: 20px;">🔌 MOSFET Motor Control</h2>
 
@@ -381,6 +381,39 @@
             <div class="status-box">
                 Motor RPM: <span id="current-rpm">0</span>% |
                 Status: <span id="motor-status-text">OFF</span>
+            </div>
+        </div>
+
+        <!-- ESP32-2: Pump & Valve Control -->
+        <div class="control-section">
+            <h2 style="text-align: center; margin-bottom: 20px;">💧 ESP32-2 Pump & Valve Control</h2>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 18px; margin-bottom: 10px;">Water Pump</h3>
+                <div class="control-buttons">
+                    <button class="btn-control-on" onclick="setPump('on')">▶ Pump ON</button>
+                    <button class="btn-control-off" onclick="setPump('off')">⏹ Pump OFF</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <h3 style="font-size: 18px; margin-bottom: 10px;">Fill Valve (Water In)</h3>
+                <div class="control-buttons">
+                    <button class="btn-control-on" onclick="setFillValve('on')">🟢 Open Fill Valve</button>
+                    <button class="btn-control-off" onclick="setFillValve('off')">🔴 Close Fill Valve</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <h3 style="font-size: 18px; margin-bottom: 10px;">Drain Valve (Water Out)</h3>
+                <div class="control-buttons">
+                    <button class="btn-control-on" onclick="setDrainValve('on')">🟢 Open Drain Valve</button>
+                    <button class="btn-control-off" onclick="setDrainValve('off')">🔴 Close Drain Valve</button>
+                </div>
+            </div>
+
+            <div class="status-box">
+                <span id="esp32_2_status">Awaiting commands...</span>
             </div>
         </div>
 
@@ -554,7 +587,7 @@
             .catch(error => console.error('Failed to load feeding status:', error));
     }
 
-    // ========== MOTOR CONTROL (MOSFET 2) ==========
+    // ========== MOTOR CONTROL (MOSFET 2, ESP32-1) ==========
     function motorControl(action) {
         fetch('/control_motor', {
             method: 'POST',
@@ -596,6 +629,41 @@
                 }
             })
             .catch(error => console.error('Failed to load motor status:', error));
+    }
+
+    // ========== ESP32-2 PUMP & VALVES ==========
+    function updateEsp32_2_Status(message) {
+        document.getElementById('esp32_2_status').textContent = message;
+    }
+
+    async function postJSON(url, body) {
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                updateEsp32_2_Status(data.message || 'OK');
+            } else {
+                updateEsp32_2_Status('Error: ' + (data.message || 'unknown'));
+            }
+        } catch (err) {
+            updateEsp32_2_Status('Error: ' + err);
+        }
+    }
+
+    function setPump(status) {
+        postJSON('/control_pump', { status: status });
+    }
+
+    function setFillValve(status) {
+        postJSON('/control_fill_valve', { status: status });
+    }
+
+    function setDrainValve(status) {
+        postJSON('/control_drain_valve', { status: status });
     }
 
     // Load initial control status
