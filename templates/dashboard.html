@@ -307,8 +307,14 @@
         </div>
 
         <h2>Sensor Trends</h2>
-        <div class="chart-wrapper">
+        <div class="chart-wrapper" style="height: 260px;">
             <canvas id="sensorChart"></canvas>
+        </div>
+
+        <!-- ULTRASONIC WATER LEVEL (ESP32-2) -->
+        <h2>Water Level (ESP32‑2 Ultrasonic)</h2>
+        <div class="status-box" id="ultrasonic-box">
+            Distance: <span id="distance-value">--</span> cm
         </div>
 
         <!-- MOSFET 1: FEEDING CONTROL -->
@@ -362,7 +368,7 @@
             </div>
         </div>
 
-        <!-- MOSFET 2: MOTOR CONTROL (ESP32-1) -->
+        <!-- MOSFET 2: MOTOR CONTROL -->
         <div class="control-section">
             <h2 style="text-align: center; margin-bottom: 20px;">🔌 MOSFET Motor Control</h2>
 
@@ -381,39 +387,6 @@
             <div class="status-box">
                 Motor RPM: <span id="current-rpm">0</span>% |
                 Status: <span id="motor-status-text">OFF</span>
-            </div>
-        </div>
-
-        <!-- ESP32-2: Pump & Valve Control -->
-        <div class="control-section">
-            <h2 style="text-align: center; margin-bottom: 20px;">💧 ESP32-2 Pump & Valve Control</h2>
-
-            <div style="margin-bottom: 20px;">
-                <h3 style="font-size: 18px; margin-bottom: 10px;">Water Pump</h3>
-                <div class="control-buttons">
-                    <button class="btn-control-on" onclick="setPump('on')">▶ Pump ON</button>
-                    <button class="btn-control-off" onclick="setPump('off')">⏹ Pump OFF</button>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 20px;">
-                <h3 style="font-size: 18px; margin-bottom: 10px;">Fill Valve (Water In)</h3>
-                <div class="control-buttons">
-                    <button class="btn-control-on" onclick="setFillValve('on')">🟢 Open Fill Valve</button>
-                    <button class="btn-control-off" onclick="setFillValve('off')">🔴 Close Fill Valve</button>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 10px;">
-                <h3 style="font-size: 18px; margin-bottom: 10px;">Drain Valve (Water Out)</h3>
-                <div class="control-buttons">
-                    <button class="btn-control-on" onclick="setDrainValve('on')">🟢 Open Drain Valve</button>
-                    <button class="btn-control-off" onclick="setDrainValve('off')">🔴 Close Drain Valve</button>
-                </div>
-            </div>
-
-            <div class="status-box">
-                <span id="esp32_2_status">Awaiting commands...</span>
             </div>
         </div>
 
@@ -440,12 +413,36 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Chart setup
-    const labels = {{ time_labels | tojson }};
-    const tempData = {{ temp_values | tojson }};
-    const phData = {{ ph_values | tojson }};
-    const ammoniaData = {{ ammonia_values | tojson }};
-    const turbidityData = {{ turbidity_values | tojson }};
+    // ========= API helper with 401 + JSON guard =========
+    async function apiFetch(url, options = {}) {
+        const res = await fetch(url, options);
+
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return null;
+        }
+
+        const text = await res.text();
+
+        if (!res.ok) {
+            console.error('API error', res.status, text);
+            throw new Error('API error ' + res.status);
+        }
+
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            console.error('Response is not valid JSON:', text);
+            throw e;
+        }
+    }
+
+    // ========= Chart setup =========
+    const labels = JSON.parse('{{ time_labels | tojson | safe }}');
+    const tempData = JSON.parse('{{ temp_values | tojson | safe }}');
+    const phData = JSON.parse('{{ ph_values | tojson | safe }}');
+    const ammoniaData = JSON.parse('{{ ammonia_values | tojson | safe }}');
+    const turbidityData = JSON.parse('{{ turbidity_values | tojson | safe }}');
 
     const ctx = document.getElementById('sensorChart').getContext('2d');
     const sensorChart = new Chart(ctx, {
@@ -478,7 +475,7 @@
     window.addEventListener('load', resizeChart);
     window.addEventListener('resize', resizeChart);
 
-    // Historical Data Toggle
+    // ========= Historical Data Toggle =========
     const btnHistorical = document.getElementById('btnHistorical');
     const historicalSection = document.getElementById('historicalSection');
     const historicalTableBody = document.querySelector('#historicalTable tbody');
@@ -492,13 +489,18 @@
 
             if (!historicalLoaded) {
                 try {
-                    const res = await fetch('/historical');
-                    const data = await res.json();
+                    const data = await apiFetch('/historical');
+                    if (!data) return;
                     if (data.status === 'success') {
                         historicalTableBody.innerHTML = '';
                         data.readings.forEach(row => {
                             const tr = document.createElement('tr');
-                            tr.innerHTML = `<td>${row.createdAt}</td><td>${row.temperature}</td><td>${row.ph}</td><td>${row.ammonia}</td><td>${row.turbidity}</td>`;
+                            tr.innerHTML =
+                                `<td>${row.createdAt}</td>` +
+                                `<td>${row.temperature}</td>` +
+                                `<td>${row.ph}</td>` +
+                                `<td>${row.ammonia}</td>` +
+                                `<td>${row.turbidity}</td>`;
                             historicalTableBody.appendChild(tr);
                         });
                         historicalLoaded = true;
@@ -516,9 +518,9 @@
 
     // ========= AUTO‑UPDATE LATEST SENSOR TABLE =========
     function refreshSensorTable() {
-        fetch('/api/latest_readings')
-            .then(response => response.json())
+        apiFetch('/api/latest_readings')
             .then(data => {
+                if (!data) return;
                 const tbody = document.querySelector('.table-wrapper table tbody');
                 tbody.innerHTML = '';
 
@@ -541,17 +543,30 @@
     }
 
     window.addEventListener('load', refreshSensorTable);
-    setInterval(refreshSensorTable, 10000);  // every 10s
+    setInterval(refreshSensorTable, 10000);
 
-    // ========== FEEDING CONTROL (MOSFET 1) ==========
+    // ========= ULTRASONIC (ESP32-2) =========
+    function loadUltrasonic() {
+        apiFetch('/api/ultrasonic_esp32_2')
+            .then(data => {
+                if (!data || data.status !== 'success') return;
+                const distances = data.distance || [];
+                const last = distances.length ? distances[distances.length - 1] : null;
+                document.getElementById('distance-value').textContent =
+                    last != null ? last.toFixed(1) : '--';
+            })
+            .catch(err => console.error('Failed to load ultrasonic data:', err));
+    }
+
+    // ========= FEEDING CONTROL (MOSFET 1) =========
     function feedingControl(action) {
-        fetch('/control_feeder', {
+        apiFetch('/control_feeder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: action})
         })
-        .then(response => response.json())
         .then(data => {
+            if (!data) return;
             alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
             if (data.status === 'success') loadFeedingStatus();
         })
@@ -560,13 +575,13 @@
 
     function setFeedSpeed() {
         const speed = document.getElementById('feed-speed-slider').value;
-        fetch('/control_feeder', {
+        apiFetch('/control_feeder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: 'set_speed', speed: speed})
         })
-        .then(response => response.json())
         .then(data => {
+            if (!data) return;
             alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
             if (data.status === 'success') loadFeedingStatus();
         })
@@ -574,28 +589,26 @@
     }
 
     function loadFeedingStatus() {
-        fetch('/get_feeding_status')
-            .then(response => response.json())
+        apiFetch('/get_feeding_status')
             .then(data => {
-                if (data.status === 'success') {
-                    document.getElementById('current-feed-speed').textContent = data.feeder_speed;
-                    const statusSpan = document.getElementById('feed-status-text');
-                    statusSpan.textContent = data.feeder_status.toUpperCase();
-                    statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
-                }
+                if (!data || data.status !== 'success') return;
+                document.getElementById('current-feed-speed').textContent = data.feeder_speed;
+                const statusSpan = document.getElementById('feed-status-text');
+                statusSpan.textContent = data.feeder_status.toUpperCase();
+                statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
             })
             .catch(error => console.error('Failed to load feeding status:', error));
     }
 
-    // ========== MOTOR CONTROL (MOSFET 2, ESP32-1) ==========
+    // ========= MOTOR CONTROL (MOSFET 2) =========
     function motorControl(action) {
-        fetch('/control_motor', {
+        apiFetch('/control_motor', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: action})
         })
-        .then(response => response.json())
         .then(data => {
+            if (!data) return;
             alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
             if (data.status === 'success') loadMotorStatus();
         })
@@ -604,13 +617,13 @@
 
     function setMotorSpeed() {
         const rpm = document.getElementById('rpm-slider').value;
-        fetch('/control_motor', {
+        apiFetch('/control_motor', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: 'set_speed', speed: rpm})
         })
-        .then(response => response.json())
         .then(data => {
+            if (!data) return;
             alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
             if (data.status === 'success') loadMotorStatus();
         })
@@ -618,58 +631,79 @@
     }
 
     function loadMotorStatus() {
-        fetch('/get_motor_status')
-            .then(response => response.json())
+        apiFetch('/get_motor_status')
             .then(data => {
-                if (data.status === 'success') {
-                    document.getElementById('current-rpm').textContent = data.motor_speed;
-                    const statusSpan = document.getElementById('motor-status-text');
-                    statusSpan.textContent = data.motor_status.toUpperCase();
-                    statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
-                }
+                if (!data || data.status !== 'success') return;
+                document.getElementById('current-rpm').textContent = data.motor_speed;
+                const statusSpan = document.getElementById('motor-status-text');
+                statusSpan.textContent = data.motor_status.toUpperCase();
+                statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
             })
             .catch(error => console.error('Failed to load motor status:', error));
     }
 
-    // ========== ESP32-2 PUMP & VALVES ==========
-    function updateEsp32_2_Status(message) {
-        document.getElementById('esp32_2_status').textContent = message;
-    }
+    // ========= FEEDING SCHEDULE =========
+    async function saveSchedule() {
+        const first = document.getElementById('feedTime1').value;
+        const second = document.getElementById('feedTime2').value;
+        const duration = document.getElementById('feedDuration').value;
 
-    async function postJSON(url, body) {
         try {
-            const res = await fetch(url, {
+            const data = await apiFetch('/save_feeding_schedule', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    first_feed: first,
+                    second_feed: second,
+                    duration: duration
+                })
             });
-            const data = await res.json();
+            if (!data) return;
+            alert(data.status === 'success' ? '✅ ' + data.message : '❌ ' + data.message);
             if (data.status === 'success') {
-                updateEsp32_2_Status(data.message || 'OK');
-            } else {
-                updateEsp32_2_Status('Error: ' + (data.message || 'unknown'));
+                loadScheduleInfo();
             }
-        } catch (err) {
-            updateEsp32_2_Status('Error: ' + err);
+        } catch (e) {
+            alert('❌ Request failed: ' + e);
         }
     }
 
-    function setPump(status) {
-        postJSON('/control_pump', { status: status });
+    async function loadScheduleInfo() {
+        try {
+            const data = await apiFetch('/get_feeding_schedule_info');
+            if (!data || data.status !== 'success') return;
+
+            const schedule = data.schedule || {};
+            const enabled = data.enabled;
+
+            const statusBox = document.getElementById('scheduleStatus');
+            const text = document.getElementById('currentSchedule');
+
+            if (enabled && schedule.first_feed && schedule.second_feed) {
+                text.textContent =
+                    `First: ${schedule.first_feed}, ` +
+                    `Second: ${schedule.second_feed}, ` +
+                    `Duration: ${schedule.duration || 0} s`;
+            } else {
+                text.textContent = 'Not set';
+            }
+            statusBox.style.display = 'block';
+        } catch (e) {
+            console.error('Failed to load schedule info:', e);
+        }
     }
 
-    function setFillValve(status) {
-        postJSON('/control_fill_valve', { status: status });
-    }
-
-    function setDrainValve(status) {
-        postJSON('/control_drain_valve', { status: status });
-    }
-
-    // Load initial control status
+    // Load initial control status, schedule, and ultrasonic
     loadFeedingStatus();
     loadMotorStatus();
-    setInterval(() => { loadFeedingStatus(); loadMotorStatus(); }, 5000);
+    loadScheduleInfo();
+    loadUltrasonic();
+
+    setInterval(() => {
+        loadFeedingStatus();
+        loadMotorStatus();
+        loadUltrasonic();
+    }, 5000);
 </script>
 </body>
 </html>
