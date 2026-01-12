@@ -11,7 +11,6 @@ from datetime import datetime
 import os
 import io
 
-# PDF generation
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -48,7 +47,6 @@ def login_required(f):
     return decorated
 
 def api_login_required(f):
-    """For JSON endpoints called via fetch: return JSON 401 instead of HTML redirect."""
     @wraps(f)
     def decorated(*args, **kwargs):
         if "user" not in session:
@@ -57,11 +55,6 @@ def api_login_required(f):
     return decorated
 
 def normalize_turbidity(value):
-    """
-    Clean turbidity readings:
-    - Convert to float
-    - Clamp to a reasonable range (0–3000 NTU)
-    """
     try:
         v = float(value)
     except (TypeError, ValueError):
@@ -173,6 +166,7 @@ def change_password(token):
         return redirect(url_for("login"))
 
     return render_template("change.html")
+
 # ========== DASHBOARD ==========
 
 @app.route("/dashboard")
@@ -224,46 +218,6 @@ def dashboard():
             elif last["turbidity"] > 50:
                 summary = "⚠️ Water is getting cloudy."
                 alert_color = "orange"
-
-    time_labels = [r["createdAt"] for r in data]
-    temp_values = [r["temperature"] for r in data]
-    ph_values = [r["ph"] for r in data]
-    ammonia_values = [r["ammonia"] for r in data]
-    turbidity_values = [r["turbidity"] for r in data]
-    latest_10 = data[-10:]
-
-    return render_template(
-        "dashboard.html",
-        readings=latest_10,
-        summary=summary,
-        alert_color=alert_color,
-        time_labels=time_labels,
-        temp_values=temp_values,
-        ph_values=ph_values,
-        ammonia_values=ammonia_values,
-        turbidity_values=turbidity_values,
-    )
-
-
-    data = list(reversed(data))
-
-    summary = "🟢 All systems normal."
-    alert_color = "green"
-
-    if data:
-        last = data[-1]
-        if last["temperature"] is not None and (last["temperature"] > 30 or last["temperature"] < 20):
-            summary = "⚠️ Temperature out of range!"
-            alert_color = "red"
-        if last["ph"] is not None and (last["ph"] < 6.5 or last["ph"] > 8.5):
-            summary = "⚠️ pH level is abnormal!"
-            alert_color = "orange"
-        if last["ammonia"] is not None and last["ammonia"] > 0.5:
-            summary = "⚠️ High ammonia detected!"
-            alert_color = "darkred"
-        if last["turbidity"] is not None and last["turbidity"] > 50:
-            summary = "⚠️ Water is too cloudy!"
-            alert_color = "gold"
 
     time_labels = [r["createdAt"] for r in data]
     temp_values = [r["temperature"] for r in data]
@@ -390,8 +344,8 @@ def control_feeding_page():
             all_readings=[],
             summary="Error loading data",
             chart_labels=[],
-            chart_temp=[]
-            , chart_ph=[],
+            chart_temp=[],
+            chart_ph=[],
             chart_ammonia=[],
             chart_turbidity=[],
         )
@@ -665,7 +619,7 @@ def add_reading():
         ph          = to_float_or_none(data.get("ph"))
         ammonia     = to_float_or_none(data.get("ammonia"))
         turbidity   = normalize_turbidity(data.get("turbidity"))
-        distance    = to_float_or_none(data.get("distance"))  # ESP32_002 ultrasonic
+        distance    = to_float_or_none(data.get("distance"))
 
         doc_ref = (
             db.collection("devices")
