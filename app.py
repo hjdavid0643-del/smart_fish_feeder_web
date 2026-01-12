@@ -19,7 +19,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key-change-this-in-production")
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
 # ========== FIREBASE SETUP ==========
@@ -37,7 +37,6 @@ db = firestore.client()
 
 serializer = URLSafeTimedSerializer(app.secret_key)
 
-
 # ========== HELPERS ==========
 
 def login_required(f):
@@ -48,23 +47,36 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def api_login_required(f):
+    """For JSON endpoints called via fetch: return JSON 401 instead of HTML redirect."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
 
-def format_timestamp(value):
-    """Safely format Firestore timestamp or return empty string."""
+def normalize_turbidity(value):
+    """Treat >=1000 as no data so charts look normal."""
     try:
-        if hasattr(value, "strftime"):
-            return value.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        pass
-    return ""
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v >= 1000:
+        return None
+    return v
 
+def to_float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 # ========== AUTH ROUTES ==========
 
 @app.route("/")
 def home():
     return redirect(url_for("login"))
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -91,12 +103,10 @@ def login():
 
     return render_template("login.html")
 
-
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -116,7 +126,6 @@ def register():
 
     return render_template("register.html")
 
-
 @app.route("/reset_password", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
@@ -135,7 +144,6 @@ def reset_password():
         return f"Password reset link: {reset_link}"
 
     return render_template("reset.html")
-
 
 @app.route("/change_password/<token>", methods=["GET", "POST"])
 def change_password(token):
@@ -160,7 +168,6 @@ def change_password(token):
 
     return render_template("change.html")
 
-
 # ========== DASHBOARD ==========
 
 @app.route("/dashboard")
@@ -171,19 +178,21 @@ def dashboard():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(30)
+        .limit(50)
     )
 
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
-        created_str = format_timestamp(doc.get("createdAt"))
+        created = doc.get("createdAt")
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        turb = normalize_turbidity(doc.get("turbidity"))
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
             "ammonia": doc.get("ammonia"),
-            "turbidity": doc.get("turbidity"),
+            "turbidity": turb,
             "createdAt": created_str,
         })
 
@@ -226,7 +235,6 @@ def dashboard():
         turbidity_values=turbidity_values,
     )
 
-
 # ========== MOSFET PAGE ==========
 
 @app.route("/mosfet")
@@ -237,24 +245,25 @@ def mosfet():
         .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(30)
+        .limit(50)
     )
 
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
         doc = r.to_dict()
-        created_str = format_timestamp(doc.get("createdAt"))
+        created = doc.get("createdAt")
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        turb = normalize_turbidity(doc.get("turbidity"))
         data.append({
             "temperature": doc.get("temperature"),
             "ph": doc.get("ph"),
             "ammonia": doc.get("ammonia"),
-            "turbidity": doc.get("turbidity"),
+            "turbidity": turb,
             "createdAt": created_str,
         })
 
     return render_template("mosfet.html", readings=data)
-
 
 # ========== FEEDING CONTROL PAGE ==========
 
@@ -266,22 +275,37 @@ def control_feeding_page():
             db.collection("devices").document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)
+            .limit(10)
         )
-
-        all_readings = []
+        readings = []
         for doc_snap in readings_ref.stream():
             d = doc_snap.to_dict()
-            created_str = format_timestamp(d.get("createdAt"))
+            created = d.get("createdAt")
+            readings.append({
+                "temperature": d.get("temperature"),
+                "ph": d.get("ph"),
+                "ammonia": d.get("ammonia"),
+                "turbidity": normalize_turbidity(d.get("turbidity")),
+                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            })
+
+        all_readings_ref = (
+            db.collection("devices").document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        all_readings = []
+        for doc_snap in all_readings_ref.stream():
+            d = doc_snap.to_dict()
+            created = d.get("createdAt")
             all_readings.append({
                 "temperature": d.get("temperature"),
                 "ph": d.get("ph"),
                 "ammonia": d.get("ammonia"),
-                "turbidity": d.get("turbidity"),
-                "createdAt": created_str,
+                "turbidity": normalize_turbidity(d.get("turbidity")),
+                "createdAt": created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             })
-
-        readings = all_readings[:10]
 
         chart_labels = []
         chart_temp = []
@@ -323,7 +347,6 @@ def control_feeding_page():
             chart_turbidity=[],
         )
 
-
 # ========== PDF EXPORT ==========
 
 @app.route("/export_pdf")
@@ -335,7 +358,7 @@ def export_pdf():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)
+            .limit(50)
         )
 
         readings_cursor = readings_ref.stream()
@@ -346,7 +369,7 @@ def export_pdf():
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
                 "ammonia": doc.get("ammonia"),
-                "turbidity": doc.get("turbidity"),
+                "turbidity": normalize_turbidity(doc.get("turbidity")),
                 "createdAt": doc.get("createdAt"),
             })
 
@@ -374,9 +397,9 @@ def export_pdf():
 
         table_data = [["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]]
         for r in data:
-            created_str = format_timestamp(r.get("createdAt"))
+            created = r["createdAt"].strftime("%Y-%m-%d %H:%M:%S") if r["createdAt"] else ""
             table_data.append([
-                created_str,
+                created,
                 "" if r["temperature"] is None else f"{r['temperature']:.2f}",
                 "" if r["ph"] is None else f"{r['ph']:.2f}",
                 "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
@@ -409,11 +432,10 @@ def export_pdf():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== MOSFET MOTOR CONTROL ==========
 
 @app.route("/control_motor", methods=["POST"])
-@login_required
+@api_login_required
 def control_motor():
     try:
         data = request.get_json() or request.form
@@ -452,9 +474,8 @@ def control_motor():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/get_motor_status", methods=["GET"])
-@login_required
+@api_login_required
 def get_motor_status():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
@@ -473,11 +494,10 @@ def get_motor_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== FEEDER CONTROL ==========
 
 @app.route("/control_feeder", methods=["POST"])
-@login_required
+@api_login_required
 def control_feeder():
     try:
         data = request.get_json() or request.form
@@ -516,9 +536,8 @@ def control_feeder():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/get_feeding_status", methods=["GET"])
-@login_required
+@api_login_required
 def get_feeding_status():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
@@ -537,11 +556,10 @@ def get_feeding_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== FEEDING SCHEDULE ==========
 
 @app.route("/save_feeding_schedule", methods=["POST"])
-@login_required
+@api_login_required
 def save_feeding_schedule():
     try:
         data = request.get_json() or request.form
@@ -566,9 +584,8 @@ def save_feeding_schedule():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/get_feeding_schedule_info", methods=["GET"])
-@login_required
+@api_login_required
 def get_feeding_schedule_info():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
@@ -584,8 +601,7 @@ def get_feeding_schedule_info():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
-# ========== SENSOR API ROUTES ==========
+# ========== SENSOR API ROUTES (ESP32_001 + ESP32_002) ==========
 
 @app.route("/add_reading", methods=["POST"])
 def add_reading():
@@ -595,24 +611,31 @@ def add_reading():
             return jsonify({"status": "error", "message": "No data provided"}), 400
 
         device_id = data.get("device_id", "ESP32_001")
-        temperature = float(data.get("temperature"))
-        ph = float(data.get("ph"))
-        ammonia = float(data.get("ammonia"))
-        turbidity = float(data.get("turbidity"))
 
-        doc_ref = db.collection("devices").document(device_id).collection("readings").document()
+        temperature = to_float_or_none(data.get("temperature"))
+        ph          = to_float_or_none(data.get("ph"))
+        ammonia     = to_float_or_none(data.get("ammonia"))
+        turbidity   = normalize_turbidity(data.get("turbidity"))
+        distance    = to_float_or_none(data.get("distance"))  # ESP32_002 ultrasonic
+
+        doc_ref = (
+            db.collection("devices")
+            .document(device_id)
+            .collection("readings")
+            .document()
+        )
         doc_ref.set({
             "temperature": temperature,
             "ph": ph,
             "ammonia": ammonia,
             "turbidity": turbidity,
+            "distance": distance,
             "createdAt": datetime.utcnow(),
         })
 
         return jsonify({"status": "success", "message": f"Reading saved for {device_id}"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
@@ -622,19 +645,21 @@ def api_latest_readings():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(30)
+            .limit(50)
         )
 
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
             doc = r.to_dict()
-            created_str = format_timestamp(doc.get("createdAt"))
+            created = doc.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            turb = normalize_turbidity(doc.get("turbidity"))
             data.append({
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
                 "ammonia": doc.get("ammonia"),
-                "turbidity": doc.get("turbidity"),
+                "turbidity": turb,
                 "createdAt": created_str,
             })
 
@@ -656,7 +681,6 @@ def api_latest_readings():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route("/historical", methods=["GET"])
 def historical():
     try:
@@ -665,19 +689,20 @@ def historical():
             .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(200)
         )
 
         readings = readings_ref.stream()
         data = []
         for r in readings:
             doc = r.to_dict()
-            created_str = format_timestamp(doc.get("createdAt"))
+            created = doc.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            turb = normalize_turbidity(doc.get("turbidity"))
             data.append({
                 "temperature": doc.get("temperature"),
                 "ph": doc.get("ph"),
                 "ammonia": doc.get("ammonia"),
-                "turbidity": doc.get("turbidity"),
+                "turbidity": turb,
                 "createdAt": created_str,
             })
 
@@ -685,6 +710,38 @@ def historical():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# ========== ULTRASONIC HISTORY FOR ESP32_002 ==========
+
+@app.route("/api/ultrasonic_esp32_2", methods=["GET"])
+def api_ultrasonic_esp32_2():
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32_002")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(100)
+        )
+
+        readings_cursor = readings_ref.stream()
+        data = []
+        for r in readings_cursor:
+            doc = r.to_dict()
+            created = doc.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            data.append({
+                "distance": doc.get("distance"),
+                "createdAt": created_str,
+            })
+
+        data = list(reversed(data))
+
+        labels = [r["createdAt"] for r in data]
+        distances = [r["distance"] for r in data]
+
+        return jsonify({"status": "success", "labels": labels, "distance": distances}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ========== FIRESTORE TEST ROUTE ==========
 
@@ -696,14 +753,11 @@ def test_firestore():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ========== HEALTH CHECK ==========
 
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "message": "Server reachable"}), 200
 
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
