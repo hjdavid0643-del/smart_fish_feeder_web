@@ -173,7 +173,6 @@ def change_password(token):
         return redirect(url_for("login"))
 
     return render_template("change.html")
-
 # ========== DASHBOARD ==========
 
 @app.route("/dashboard")
@@ -201,6 +200,50 @@ def dashboard():
             "turbidity": turb,
             "createdAt": created_str,
         })
+
+    data = list(reversed(data))
+
+    summary = "🟢 All systems normal."
+    alert_color = "green"
+
+    if data:
+        last = data[-1]
+        if last["temperature"] is not None and (last["temperature"] > 30 or last["temperature"] < 20):
+            summary = "⚠️ Temperature out of range!"
+            alert_color = "red"
+        if last["ph"] is not None and (last["ph"] < 6.5 or last["ph"] > 8.5):
+            summary = "⚠️ pH level is abnormal!"
+            alert_color = "orange"
+        if last["ammonia"] is not None and last["ammonia"] > 0.5:
+            summary = "⚠️ High ammonia detected!"
+            alert_color = "darkred"
+        if last["turbidity"] is not None:
+            if last["turbidity"] > 100:
+                summary = "⚠️ Water is too cloudy! (Danger)"
+                alert_color = "gold"
+            elif last["turbidity"] > 50:
+                summary = "⚠️ Water is getting cloudy."
+                alert_color = "orange"
+
+    time_labels = [r["createdAt"] for r in data]
+    temp_values = [r["temperature"] for r in data]
+    ph_values = [r["ph"] for r in data]
+    ammonia_values = [r["ammonia"] for r in data]
+    turbidity_values = [r["turbidity"] for r in data]
+    latest_10 = data[-10:]
+
+    return render_template(
+        "dashboard.html",
+        readings=latest_10,
+        summary=summary,
+        alert_color=alert_color,
+        time_labels=time_labels,
+        temp_values=temp_values,
+        ph_values=ph_values,
+        ammonia_values=ammonia_values,
+        turbidity_values=turbidity_values,
+    )
+
 
     data = list(reversed(data))
 
