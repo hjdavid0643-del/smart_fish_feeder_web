@@ -57,13 +57,19 @@ def api_login_required(f):
     return decorated
 
 def normalize_turbidity(value):
-    """Treat >=1000 as no data so charts look normal."""
+    """
+    Clean turbidity readings:
+    - Convert to float
+    - Clamp to a reasonable range (0–3000 NTU)
+    """
     try:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    if v >= 1000:
-        return None
+    if v < 0:
+        v = 0.0
+    if v > 3000:
+        v = 3000.0
     return v
 
 def to_float_or_none(value):
@@ -184,14 +190,14 @@ def dashboard():
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
-        doc = r.to_dict()
-        created = doc.get("createdAt")
+        doc_data = r.to_dict()
+        created = doc_data.get("createdAt")
         created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-        turb = normalize_turbidity(doc.get("turbidity"))
+        turb = normalize_turbidity(doc_data.get("turbidity"))
         data.append({
-            "temperature": doc.get("temperature"),
-            "ph": doc.get("ph"),
-            "ammonia": doc.get("ammonia"),
+            "temperature": doc_data.get("temperature"),
+            "ph": doc_data.get("ph"),
+            "ammonia": doc_data.get("ammonia"),
             "turbidity": turb,
             "createdAt": created_str,
         })
@@ -251,14 +257,14 @@ def mosfet():
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
-        doc = r.to_dict()
-        created = doc.get("createdAt")
+        doc_data = r.to_dict()
+        created = doc_data.get("createdAt")
         created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-        turb = normalize_turbidity(doc.get("turbidity"))
+        turb = normalize_turbidity(doc_data.get("turbidity"))
         data.append({
-            "temperature": doc.get("temperature"),
-            "ph": doc.get("ph"),
-            "ammonia": doc.get("ammonia"),
+            "temperature": doc_data.get("temperature"),
+            "ph": doc_data.get("ph"),
+            "ammonia": doc_data.get("ammonia"),
             "turbidity": turb,
             "createdAt": created_str,
         })
@@ -341,8 +347,8 @@ def control_feeding_page():
             all_readings=[],
             summary="Error loading data",
             chart_labels=[],
-            chart_temp=[],
-            chart_ph=[],
+            chart_temp=[]
+            , chart_ph=[],
             chart_ammonia=[],
             chart_turbidity=[],
         )
@@ -364,13 +370,13 @@ def export_pdf():
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
-            doc = r.to_dict()
+            doc_data = r.to_dict()
             data.append({
-                "temperature": doc.get("temperature"),
-                "ph": doc.get("ph"),
-                "ammonia": doc.get("ammonia"),
-                "turbidity": normalize_turbidity(doc.get("turbidity")),
-                "createdAt": doc.get("createdAt"),
+                "temperature": doc_data.get("temperature"),
+                "ph": doc_data.get("ph"),
+                "ammonia": doc_data.get("ammonia"),
+                "turbidity": normalize_turbidity(doc_data.get("turbidity")),
+                "createdAt": doc_data.get("createdAt"),
             })
 
         data = list(reversed(data))
@@ -651,14 +657,14 @@ def api_latest_readings():
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
-            doc = r.to_dict()
-            created = doc.get("createdAt")
+            doc_data = r.to_dict()
+            created = doc_data.get("createdAt")
             created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-            turb = normalize_turbidity(doc.get("turbidity"))
+            turb = normalize_turbidity(doc_data.get("turbidity"))
             data.append({
-                "temperature": doc.get("temperature"),
-                "ph": doc.get("ph"),
-                "ammonia": doc.get("ammonia"),
+                "temperature": doc_data.get("temperature"),
+                "ph": doc_data.get("ph"),
+                "ammonia": doc_data.get("ammonia"),
                 "turbidity": turb,
                 "createdAt": created_str,
             })
@@ -694,14 +700,14 @@ def historical():
         readings = readings_ref.stream()
         data = []
         for r in readings:
-            doc = r.to_dict()
-            created = doc.get("createdAt")
+            doc_data = r.to_dict()
+            created = doc_data.get("createdAt")
             created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-            turb = normalize_turbidity(doc.get("turbidity"))
+            turb = normalize_turbidity(doc_data.get("turbidity"))
             data.append({
-                "temperature": doc.get("temperature"),
-                "ph": doc.get("ph"),
-                "ammonia": doc.get("ammonia"),
+                "temperature": doc_data.get("temperature"),
+                "ph": doc_data.get("ph"),
+                "ammonia": doc_data.get("ammonia"),
                 "turbidity": turb,
                 "createdAt": created_str,
             })
@@ -726,11 +732,11 @@ def api_ultrasonic_esp32_2():
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
-            doc = r.to_dict()
-            created = doc.get("createdAt")
+            doc_data = r.to_dict()
+            created = doc_data.get("createdAt")
             created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
             data.append({
-                "distance": doc.get("distance"),
+                "distance": doc_data.get("distance"),
                 "createdAt": created_str,
             })
 
