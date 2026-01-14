@@ -7,7 +7,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from functools import wraps
 from itsdangerous import URLSafeTimedSerializer
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import io
 
@@ -17,9 +17,11 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
+
 
 # ========== FIREBASE SETUP ==========
 
@@ -36,6 +38,7 @@ db = firestore.client()
 
 serializer = URLSafeTimedSerializer(app.secret_key)
 
+
 # ========== HELPERS ==========
 
 def login_required(f):
@@ -46,6 +49,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+
 def api_login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -53,6 +57,7 @@ def api_login_required(f):
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
     return decorated
+
 
 def normalize_turbidity(value):
     try:
@@ -65,17 +70,20 @@ def normalize_turbidity(value):
         v = 3000.0
     return v
 
+
 def to_float_or_none(value):
     try:
         return float(value)
     except (TypeError, ValueError):
         return None
 
+
 # ========== AUTH ROUTES ==========
 
 @app.route("/")
 def home():
     return redirect(url_for("login"))
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -102,10 +110,12 @@ def login():
 
     return render_template("login.html")
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -125,6 +135,7 @@ def register():
 
     return render_template("register.html")
 
+
 @app.route("/reset_password", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
@@ -143,6 +154,7 @@ def reset_password():
         return f"Password reset link: {reset_link}"
 
     return render_template("reset.html")
+
 
 @app.route("/change_password/<token>", methods=["GET", "POST"])
 def change_password(token):
@@ -166,6 +178,7 @@ def change_password(token):
         return redirect(url_for("login"))
 
     return render_template("change.html")
+
 
 # ========== DASHBOARD ==========
 
@@ -202,15 +215,8 @@ def dashboard():
 
     if data:
         last = data[-1]
-        if last["temperature"] is not None and (last["temperature"] > 30 or last["temperature"] < 20):
-            summary = "⚠️ Temperature out of range!"
-            alert_color = "red"
-        if last["ph"] is not None and (last["ph"] < 6.5 or last["ph"] > 8.5):
-            summary = "⚠️ pH level is abnormal!"
-            alert_color = "orange"
-        if last["ammonia"] is not None and last["ammonia"] > 0.5:
-            summary = "⚠️ High ammonia detected!"
-            alert_color = "darkred"
+
+        # turbidity checks (you can add more for temp, pH, ammonia)
         if last["turbidity"] is not None:
             if last["turbidity"] > 100:
                 summary = "⚠️ Water is too cloudy! (Danger)"
@@ -237,6 +243,7 @@ def dashboard():
         ammonia_values=ammonia_values,
         turbidity_values=turbidity_values,
     )
+
 
 # ========== MOSFET PAGE ==========
 
@@ -267,6 +274,7 @@ def mosfet():
         })
 
     return render_template("mosfet.html", readings=data)
+
 
 # ========== FEEDING CONTROL PAGE ==========
 
@@ -350,18 +358,22 @@ def control_feeding_page():
             chart_turbidity=[],
         )
 
-# ========== PDF EXPORT ==========
+
+# ========== PDF EXPORT (LAST 24 HOURS) ==========
 
 @app.route("/export_pdf")
 @login_required
 def export_pdf():
     try:
+        now = datetime.utcnow()
+        twenty_four_hours_ago = now - timedelta(hours=24)
+
         readings_ref = (
             db.collection("devices")
             .document("ESP32_001")
             .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
+            .where("createdAt", ">=", twenty_four_hours_ago)
+            .order_by("createdAt", direction=firestore.Query.ASCENDING)
         )
 
         readings_cursor = readings_ref.stream()
@@ -375,8 +387,6 @@ def export_pdf():
                 "turbidity": normalize_turbidity(doc_data.get("turbidity")),
                 "createdAt": doc_data.get("createdAt"),
             })
-
-        data = list(reversed(data))
 
         pdf_buffer = io.BytesIO()
         doc_pdf = SimpleDocTemplate(pdf_buffer, pagesize=letter)
@@ -393,21 +403,29 @@ def export_pdf():
         )
         elements.append(Paragraph("🐟 Water Quality Monitoring Report", title_style))
         elements.append(Paragraph(
-            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')} (last 24 hours)",
             styles["Normal"]
         ))
         elements.append(Spacer(1, 0.2 * inch))
 
         table_data = [["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]]
-        for r in data:
-            created = r["createdAt"].strftime("%Y-%m-%d %H:%M:%S") if r["createdAt"] else ""
-            table_data.append([
-                created,
-                "" if r["temperature"] is None else f"{r['temperature']:.2f}",
-                "" if r["ph"] is None else f"{r['ph']:.2f}",
-                "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
-                "" if r["turbidity"] is None else f"{r['turbidity']:.2f}",
-            ])
+
+        if data:
+            for r in data:
+                created_dt = r["createdAt"]
+                if isinstance(created_dt, datetime):
+                    created_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    created_str = str(created_dt) if created_dt else ""
+                table_data.append([
+                    created_str,
+                    "" if r["temperature"] is None else f"{r['temperature']:.2f}",
+                    "" if r["ph"] is None else f"{r['ph']:.2f}",
+                    "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
+                    "" if r["turbidity"] is None else f"{r['turbidity']:.2f}",
+                ])
+        else:
+            table_data.append(["No data in last 24 hours", "", "", "", ""])
 
         table = Table(table_data, repeatRows=1)
         table.setStyle(TableStyle([
@@ -421,19 +439,24 @@ def export_pdf():
             ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
         ]))
 
-        elements.append(Paragraph("Recent Sensor Readings", styles["Heading2"]))
+        elements.append(Paragraph("Recent Sensor Readings (24 hours)", styles["Heading2"]))
         elements.append(table)
+
         doc_pdf.build(elements)
         pdf_buffer.seek(0)
 
+        timestamp = now.strftime('%Y%m%d_%H%M%S')
         return send_file(
             pdf_buffer,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name=f"water_quality_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            download_name=f"water_quality_24h_{timestamp}.pdf",
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== MOSFET MOTOR CONTROL ==========
 
@@ -477,6 +500,7 @@ def control_motor():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_motor_status", methods=["GET"])
 @api_login_required
 def get_motor_status():
@@ -496,6 +520,7 @@ def get_motor_status():
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== FEEDER CONTROL ==========
 
@@ -539,6 +564,7 @@ def control_feeder():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_feeding_status", methods=["GET"])
 @api_login_required
 def get_feeding_status():
@@ -558,6 +584,7 @@ def get_feeding_status():
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== FEEDING SCHEDULE ==========
 
@@ -587,6 +614,7 @@ def save_feeding_schedule():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/get_feeding_schedule_info", methods=["GET"])
 @api_login_required
 def get_feeding_schedule_info():
@@ -604,7 +632,8 @@ def get_feeding_schedule_info():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# ========== SENSOR API ROUTES (ESP32_001 + ESP32_002) ==========
+
+# ========== SENSOR API ROUTES ==========
 
 @app.route("/add_reading", methods=["POST"])
 def add_reading():
@@ -639,6 +668,7 @@ def add_reading():
         return jsonify({"status": "success", "message": f"Reading saved for {device_id}"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
@@ -684,6 +714,7 @@ def api_latest_readings():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/historical", methods=["GET"])
 def historical():
     try:
@@ -712,6 +743,7 @@ def historical():
         return jsonify({"status": "success", "readings": data}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # ========== ULTRASONIC HISTORY FOR ESP32_002 ==========
 
@@ -746,6 +778,7 @@ def api_ultrasonic_esp32_2():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # ========== FIRESTORE TEST ROUTE ==========
 
 @app.route("/test_firestore")
@@ -756,11 +789,13 @@ def test_firestore():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # ========== HEALTH CHECK ==========
 
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "ok", "message": "Server reachable"}), 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
