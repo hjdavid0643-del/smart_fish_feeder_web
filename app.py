@@ -136,6 +136,7 @@ def register():
     return render_template("register.html")
 
 
+# ---- FIXED FORGOT PASSWORD ----
 @app.route("/reset_password", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
@@ -151,8 +152,13 @@ def reset_password():
 
         token = serializer.dumps(email, salt="password-reset")
         reset_link = url_for("change_password", token=token, _external=True)
-        return f"Password reset link: {reset_link}"
 
+        # Render page with success + clickable link instead of plain text
+        return render_template("reset.html",
+                               success=True,
+                               reset_link=reset_link)
+
+    # GET: just show the form
     return render_template("reset.html")
 
 
@@ -185,7 +191,6 @@ def change_password(token):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    # Latest readings for ESP32_001
     readings_ref = (
         db.collection("devices")
         .document("ESP32_001")
@@ -216,7 +221,6 @@ def dashboard():
 
     if data:
         last = data[-1]
-        # turbidity checks
         if last["turbidity"] is not None:
             if last["turbidity"] > 100:
                 summary = "⚠️ Water is too cloudy! (Danger)"
@@ -232,21 +236,19 @@ def dashboard():
     turbidity_values = [r["turbidity"] for r in data]
     latest_10 = data[-10:]
 
-    # ===== LOW FEED (≤ 30 g) ALERT FROM ESP32_002 =====
-    # Assumes devices/ESP32_002 document has a numeric field "feed_grams"
+    # LOW FEED (≤ 30 g) ALERT FROM ESP32_002
     low_feed_grams_alert = None
-    low_feed_grams_color = "#ff7043"  # orange bar
+    low_feed_grams_color = "#ff7043"
 
     try:
         hopper_doc = db.collection("devices").document("ESP32_002").get()
         if hopper_doc.exists:
             hopper_data = hopper_doc.to_dict()
-            feed_grams = hopper_data.get("feed_grams")  # change key if your field name is different
+            feed_grams = hopper_data.get("feed_grams")  # adjust if field name different
 
             if feed_grams is not None and float(feed_grams) <= 30:
                 low_feed_grams_alert = f"Low feed: only {feed_grams} g left, please refill."
     except Exception as e:
-        # keep dashboard working even if ESP32_002 read fails
         print("Error reading hopper/feed_grams:", e)
 
     return render_template(
@@ -368,13 +370,13 @@ def control_feeding_page():
             "control.html",
             error=str(e),
             readings=[],
-            all_readings[],
+            all_readings=[],
             summary="Error loading data",
             chart_labels=[],
             chart_temp=[],
-            chart_ph[],
-            chart_ammonia[],
-            chart_turbidity[],
+            chart_ph=[],
+            chart_ammonia=[],
+            chart_turbidity=[],
         )
 
 
@@ -664,10 +666,10 @@ def add_reading():
         device_id = data.get("device_id", "ESP32_001")
 
         temperature = to_float_or_none(data.get("temperature"))
-        ph          = to_float_or_none(data.get("ph"))
-        ammonia     = to_float_or_none(data.get("ammonia"))
-        turbidity   = normalize_turbidity(data.get("turbidity"))
-        distance    = to_float_or_none(data.get("distance"))
+        ph = to_float_or_none(data.get("ph"))
+        ammonia = to_float_or_none(data.get("ammonia"))
+        turbidity = normalize_turbidity(data.get("turbidity"))
+        distance = to_float_or_none(data.get("distance"))
 
         doc_ref = (
             db.collection("devices")
