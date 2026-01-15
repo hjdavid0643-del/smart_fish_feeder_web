@@ -212,7 +212,6 @@
             font-weight: bold;
             cursor: pointer;
             box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
-            transition: all 0.3s;
         }
         .btn-set:hover {
             background: linear-gradient(135deg, #0056b3, #004085);
@@ -316,6 +315,15 @@
         <div class="status-box" id="ultrasonic-box">
             Distance: <span id="distance-value">--</span> cm
         </div>
+        <br>
+
+        <!-- LOW FEED (30 g) ALERT -->
+        {% if low_feed_grams_alert %}
+        <div class="status-box"
+             style="margin-top: 10px; margin-bottom: 15px; background: {{ low_feed_grams_color }}; color: #fff;">
+            {{ low_feed_grams_alert }}
+        </div>
+        {% endif %}
 
         <!-- MOSFET 1: FEEDING CONTROL -->
         <div class="control-section">
