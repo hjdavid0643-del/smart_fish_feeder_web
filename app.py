@@ -185,6 +185,7 @@ def change_password(token):
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Latest readings for ESP32_001
     readings_ref = (
         db.collection("devices")
         .document("ESP32_001")
@@ -215,8 +216,7 @@ def dashboard():
 
     if data:
         last = data[-1]
-
-        # turbidity checks (you can add more for temp, pH, ammonia)
+        # turbidity checks
         if last["turbidity"] is not None:
             if last["turbidity"] > 100:
                 summary = "⚠️ Water is too cloudy! (Danger)"
@@ -232,6 +232,23 @@ def dashboard():
     turbidity_values = [r["turbidity"] for r in data]
     latest_10 = data[-10:]
 
+    # ===== LOW FEED (≤ 30 g) ALERT FROM ESP32_002 =====
+    # Assumes devices/ESP32_002 document has a numeric field "feed_grams"
+    low_feed_grams_alert = None
+    low_feed_grams_color = "#ff7043"  # orange bar
+
+    try:
+        hopper_doc = db.collection("devices").document("ESP32_002").get()
+        if hopper_doc.exists:
+            hopper_data = hopper_doc.to_dict()
+            feed_grams = hopper_data.get("feed_grams")  # change key if your field name is different
+
+            if feed_grams is not None and float(feed_grams) <= 30:
+                low_feed_grams_alert = f"Low feed: only {feed_grams} g left, please refill."
+    except Exception as e:
+        # keep dashboard working even if ESP32_002 read fails
+        print("Error reading hopper/feed_grams:", e)
+
     return render_template(
         "dashboard.html",
         readings=latest_10,
@@ -242,6 +259,8 @@ def dashboard():
         ph_values=ph_values,
         ammonia_values=ammonia_values,
         turbidity_values=turbidity_values,
+        low_feed_grams_alert=low_feed_grams_alert,
+        low_feed_grams_color=low_feed_grams_color,
     )
 
 
@@ -349,13 +368,13 @@ def control_feeding_page():
             "control.html",
             error=str(e),
             readings=[],
-            all_readings=[],
+            all_readings[],
             summary="Error loading data",
             chart_labels=[],
             chart_temp=[],
-            chart_ph=[],
-            chart_ammonia=[],
-            chart_turbidity=[],
+            chart_ph[],
+            chart_ammonia[],
+            chart_turbidity[],
         )
 
 
