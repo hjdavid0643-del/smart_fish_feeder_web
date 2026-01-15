@@ -136,7 +136,6 @@
         }
         #historicalSection { margin-top: 6px; }
 
-        /* Control Section Styles */
         .control-section {
             background: rgba(0, 0, 0, 0.15);
             padding: 25px;
@@ -421,7 +420,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // ========= API helper with 401 + JSON guard =========
     async function apiFetch(url, options = {}) {
         const res = await fetch(url, options);
 
@@ -445,7 +443,6 @@
         }
     }
 
-    // ========= Chart setup =========
     const labels = JSON.parse('{{ time_labels | tojson | safe }}');
     const tempData = JSON.parse('{{ temp_values | tojson | safe }}');
     const phData = JSON.parse('{{ ph_values | tojson | safe }}');
@@ -483,7 +480,6 @@
     window.addEventListener('load', resizeChart);
     window.addEventListener('resize', resizeChart);
 
-    // ========= Historical Data Toggle =========
     const btnHistorical = document.getElementById('btnHistorical');
     const historicalSection = document.getElementById('historicalSection');
     const historicalTableBody = document.querySelector('#historicalTable tbody');
@@ -524,7 +520,6 @@
         }
     });
 
-    // ========= AUTO‑UPDATE LATEST SENSOR TABLE =========
     function refreshSensorTable() {
         apiFetch('/api/latest_readings')
             .then(data => {
@@ -553,7 +548,6 @@
     window.addEventListener('load', refreshSensorTable);
     setInterval(refreshSensorTable, 10000);
 
-    // ========= ULTRASONIC (ESP32-2) =========
     function loadUltrasonic() {
         apiFetch('/api/ultrasonic_esp32_2')
             .then(data => {
@@ -566,7 +560,6 @@
             .catch(err => console.error('Failed to load ultrasonic data:', err));
     }
 
-    // ========= FEEDING CONTROL (MOSFET 1) =========
     function feedingControl(action) {
         apiFetch('/control_feeder', {
             method: 'POST',
@@ -608,7 +601,6 @@
             .catch(error => console.error('Failed to load feeding status:', error));
     }
 
-    // ========= MOTOR CONTROL (MOSFET 2) =========
     function motorControl(action) {
         apiFetch('/control_motor', {
             method: 'POST',
@@ -650,7 +642,6 @@
             .catch(error => console.error('Failed to load motor status:', error));
     }
 
-    // ========= FEEDING SCHEDULE =========
     async function saveSchedule() {
         const first = document.getElementById('feedTime1').value;
         const second = document.getElementById('feedTime2').value;
@@ -701,7 +692,6 @@
         }
     }
 
-    // Load initial control status, schedule, and ultrasonic
     loadFeedingStatus();
     loadMotorStatus();
     loadScheduleInfo();
