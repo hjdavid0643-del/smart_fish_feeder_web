@@ -32,7 +32,7 @@ CORS(app)
 # ================== FIREBASE SETUP ==================
 
 def init_firebase():
-    """Initialize Firebase Admin from env var or secret file, but don't crash app."""
+    """Initialize Firebase Admin from env var or secret file, without crashing app."""
     firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
     try:
         if firebase_creds:
@@ -45,8 +45,9 @@ def init_firebase():
             )
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
+        # Use named parameter 'credential' to avoid misinterpreting args
         if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
+            firebase_admin.initialize_app(credential=cred)
 
         return firestore.client()
     except Exception as e:
@@ -116,7 +117,7 @@ def login():
 
         if db is None:
             return render_template("login.html",
-                                   error="Firestore not initialized")
+                                   error="Firestore not initialized on server")
 
         try:
             users_q = (
@@ -164,7 +165,7 @@ def register():
 
         if db is None:
             return render_template("register.html",
-                                   error="Firestore not initialized")
+                                   error="Firestore not initialized on server")
 
         try:
             existing = (
@@ -199,7 +200,7 @@ def reset_password():
 
         if db is None:
             return render_template("reset.html",
-                                   error="Firestore not initialized")
+                                   error="Firestore not initialized on server")
 
         try:
             users_q = (
@@ -241,7 +242,7 @@ def change_password(token):
 
         if db is None:
             return render_template("change.html",
-                                   error="Firestore not initialized")
+                                   error="Firestore not initialized on server")
 
         try:
             users_q = (
@@ -270,19 +271,21 @@ def change_password(token):
 @login_required
 def dashboard():
     if db is None:
-        return render_template("dashboard.html",
-                               readings=[],
-                               summary="Firestore not initialized",
-                               alert_color="gray",
-                               time_labels=[],
-                               temp_values=[],
-                               ph_values=[],
-                               ammonia_values=[],
-                               turbidity_values=[],
-                               feeder_alert="Feeder status unavailable",
-                               feeder_alert_color="gray",
-                               low_feed_alert=None,
-                               low_feed_color="#ff7043")
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Firestore not initialized on server",
+            alert_color="gray",
+            time_labels=[],
+            temp_values=[],
+            ph_values=[],
+            ammonia_values=[],
+            turbidity_values=[],
+            feeder_alert="Feeder status unavailable",
+            feeder_alert_color="gray",
+            low_feed_alert=None,
+            low_feed_color="#ff7043",
+        )
 
     readings_ref = (
         db.collection("devices")
@@ -351,8 +354,7 @@ def dashboard():
             )
             if level_percent is not None and level_percent < 20:
                 low_feed_alert = (
-                    f"⚠️ Low feed level: {level_percent:.1f}% – "
-                    "please refill the hopper"
+                    f"⚠️ Low feed level: {level_percent:.1f}% – please refill the hopper"
                 )
     except Exception:
         pass
@@ -425,7 +427,7 @@ def control_feeding_page():
     if db is None:
         return render_template(
             "control.html",
-            error="Firestore not initialized",
+            error="Firestore not initialized on server",
             readings=[],
             all_readings=[],
             summary="Error loading data",
@@ -530,7 +532,7 @@ def control_feeding_page():
 def export_pdf():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         now = datetime.utcnow()
         twenty_four_hours_ago = now - timedelta(hours=24)
@@ -645,7 +647,7 @@ def export_pdf():
 def control_motor():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -706,7 +708,7 @@ def control_motor():
 def get_motor_status():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -734,7 +736,7 @@ def get_motor_status():
 def control_feeder():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -795,7 +797,7 @@ def control_feeder():
 def get_feeding_status():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -825,7 +827,7 @@ def get_feeding_status():
 def save_feeding_schedule():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         data = request.get_json() or request.form
         first_feed = data.get("first_feed")
@@ -861,7 +863,7 @@ def save_feeding_schedule():
 def get_feeding_schedule_info():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -886,7 +888,7 @@ def get_feeding_schedule_info():
 def add_reading():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         data = request.get_json()
         if not data:
@@ -930,7 +932,7 @@ def add_reading():
 def api_latest_readings():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -982,7 +984,7 @@ def api_latest_readings():
 def historical():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -1019,7 +1021,7 @@ def historical():
 def api_ultrasonic_esp32_2():
     if db is None:
         return jsonify({"status": "error",
-                        "message": "Firestore not initialized"}), 500
+                        "message": "Firestore not initialized on server"}), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -1061,7 +1063,7 @@ def test_firestore():
     try:
         if db is None:
             return jsonify(
-                {"status": "error", "message": "Firestore not initialized"}
+                {"status": "error", "message": "Firestore not initialized on server"}
             ), 500
 
         doc = db.collection("devices").document("ESP32_001").get()
