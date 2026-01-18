@@ -9,8 +9,10 @@ from functools import wraps
 from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime, timedelta
 import os
-import io      # <-- no spaces or tabs before 'import'
+import io
 import json
+
+from google.api_core.exceptions import ResourceExhausted
 
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import (
@@ -32,7 +34,7 @@ CORS(app)
 # ================== FIREBASE SETUP ==================
 
 def init_firebase():
-    """Initialize Firebase Admin from env var or secret file, without crashing app."""
+    """Initialize Firebase Admin from env var or secret file."""
     firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
     try:
         if firebase_creds:
@@ -130,6 +132,11 @@ def login():
                 .stream()
             )
             user_doc = next(users_q, None)
+        except ResourceExhausted:
+            return render_template(
+                "login.html",
+                error="Database quota exceeded. Please try again later."
+            )
         except Exception as e:
             return render_template(
                 "login.html",
@@ -196,6 +203,11 @@ def register():
             db.collection("users").add(
                 {"email": email, "password": password, "role": "worker"}
             )
+        except ResourceExhausted:
+            return render_template(
+                "register.html",
+                error="Database quota exceeded. Please try again later."
+            )
         except Exception as e:
             return render_template(
                 "register.html",
@@ -231,6 +243,11 @@ def reset_password():
                 .stream()
             )
             user_doc = next(users_q, None)
+        except ResourceExhausted:
+            return render_template(
+                "reset.html",
+                error="Database quota exceeded. Please try again later."
+            )
         except Exception as e:
             return render_template(
                 "reset.html",
@@ -281,6 +298,11 @@ def change_password(token):
                 .stream()
             )
             user_doc = next(users_q, None)
+        except ResourceExhausted:
+            return render_template(
+                "change.html",
+                error="Database quota exceeded. Please try again later."
+            )
         except Exception as e:
             return render_template(
                 "change.html",
@@ -1104,7 +1126,7 @@ def api_ultrasonic_esp32_2():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# ================== SIMPLE CHECK_FEED ENDPOINT (ESP32 404s) ==================
+# ================== SIMPLE CHECK_FEED ENDPOINT ==================
 
 @app.route("/api/check_feed_command", methods=["GET"])
 def api_check_feed_command():
