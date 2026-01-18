@@ -132,9 +132,9 @@ def login():
                 .limit(1)
                 .stream()
             )
+            # advancing the stream is inside the try so quota errors are caught
             user_doc = next(users_q, None)
         except ResourceExhausted:
-            # Firestore quota exceeded (429)
             return render_template(
                 "login.html",
                 error="Database quota exceeded. Please try again later.",
