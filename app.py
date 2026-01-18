@@ -32,6 +32,10 @@ CORS(app)
 
 serializer = URLSafeTimedSerializer(app.secret_key)
 
+# ---- hard-coded admin (via env vars) ----
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+
 
 # ================== FIREBASE SETUP ==================
 
@@ -119,46 +123,16 @@ def login():
                 error="Please enter email and password",
             )
 
-        if db is None:
-            return render_template(
-                "login.html",
-                error="Firestore not initialized on server",
-            )
-
-        try:
-            users_q = (
-                db.collection("users")
-                .where("email", "==", email)
-                .limit(1)
-                .stream()
-            )
-            user_doc = next(users_q, None)
-        except ResourceExhausted:
-            return render_template(
-                "login.html",
-                error="Database quota exceeded. Please try again later.",
-            )
-        except Exception as e:
-            return render_template(
-                "login.html",
-                error=f"Firestore error: {e}",
-            )
-
-        if not user_doc:
+        # ---- NO FIRESTORE HERE ----
+        if email != ADMIN_EMAIL or password != ADMIN_PASSWORD:
             return render_template(
                 "login.html",
                 error="Invalid email or password",
             )
 
-        data = user_doc.to_dict()
-        if data.get("password") != password:
-            return render_template(
-                "login.html",
-                error="Invalid email or password",
-            )
-
+        # login success
         session["user"] = email
-        session["role"] = data.get("role", "worker")
+        session["role"] = "admin"
         return redirect(url_for("dashboard"))
 
     return render_template("login.html")
@@ -169,6 +143,11 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+# You can keep /register, /reset_password, /change_password
+# OR comment them out if you won't use them now.
+# They still touch Firestore, but they are not required
+# for a single-admin setup.
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -305,421 +284,9 @@ def change_password(token):
 
 
 # ================== DASHBOARD ==================
+# (unchanged)
+# ... keep the rest of your code from dashboard() onwards exactly as you posted ...
 
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    if db is None:
-        return render_template(
-            "dashboard.html",
-            readings=[],
-            summary="Firestore not initialized on server",
-            alert_color="gray",
-            time_labels=[],
-            temp_values=[],
-            ph_values=[],
-            ammonia_values=[],
-            turbidity_values=[],
-            feeder_alert="Feeder status unavailable",
-            feeder_alert_color="gray",
-            low_feed_alert=None,
-            low_feed_color="#ff7043",
-        )
-
-    readings_ref = (
-        db.collection("devices")
-        .document("ESP32_001")
-        .collection("readings")
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
-    )
-
-    readings_cursor = readings_ref.stream()
-    data = []
-    for r in readings_cursor:
-        doc_data = r.to_dict()
-        created = doc_data.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-        turb = normalize_turbidity(doc_data.get("turbidity"))
-        data.append(
-            {
-                "temperature": doc_data.get("temperature"),
-                "ph": doc_data.get("ph"),
-                "ammonia": doc_data.get("ammonia"),
-                "turbidity": turb,
-                "createdAt": created_str,
-            }
-        )
-
-    data = list(reversed(data))
-
-    summary = "🟢 All systems normal."
-    alert_color = "green"
-
-    if data:
-        last = data[-1]
-        if last["turbidity"] is not None:
-            if last["turbidity"] > 100:
-                summary = "⚠️ Water is too cloudy! (Danger)"
-                alert_color = "gold"
-            elif last["turbidity"] > 50:
-                summary = "⚠️ Water is getting cloudy."
-                alert_color = "orange"
-
-    feeder_alert = "Feeder is currently OFF"
-    feeder_alert_color = "lightcoral"
-    try:
-        device_doc = db.collection("devices").document("ESP32_001").get()
-        if device_doc.exists:
-            d = device_doc.to_dict()
-            feeder_status = d.get("feeder_status", "off")
-            feeder_speed = d.get("feeder_speed", 0)
-
-            if feeder_status == "on" and feeder_speed and feeder_speed > 0:
-                feeder_alert = f"🐟 Feeding in progress at {feeder_speed}% speed"
-                feeder_alert_color = "limegreen"
-    except Exception:
-        feeder_alert = "Feeder status unavailable"
-        feeder_alert_color = "gray"
-
-    low_feed_alert = None
-    low_feed_color = "#ff7043"
-    try:
-        hopper_doc = db.collection("devices").document("ESP32_002").get()
-        if hopper_doc.exists:
-            hdata = hopper_doc.to_dict()
-            level_percent = (
-                hdata.get("feed_level_percent")
-                or hdata.get("water_level_percent")
-            )
-            if level_percent is not None and level_percent < 20:
-                low_feed_alert = (
-                    f"⚠️ Low feed level: {level_percent:.1f}% – please refill the hopper"
-                )
-    except Exception:
-        pass
-
-    time_labels = [r["createdAt"] for r in data]
-    temp_values = [r["temperature"] for r in data]
-    ph_values = [r["ph"] for r in data]
-    ammonia_values = [r["ammonia"] for r in data]
-    turbidity_values = [r["turbidity"] for r in data]
-    latest_10 = data[-10:]
-
-    return render_template(
-        "dashboard.html",
-        readings=latest_10,
-        summary=summary,
-        alert_color=alert_color,
-        time_labels=time_labels,
-        temp_values=temp_values,
-        ph_values=ph_values,
-        ammonia_values=ammonia_values,
-        turbidity_values=turbidity_values,
-        feeder_alert=feeder_alert,
-        feeder_alert_color=feeder_alert_color,
-        low_feed_alert=low_feed_alert,
-        low_feed_color=low_feed_color,
-    )
-
-
-# ================== MOSFET PAGE ==================
-
-@app.route("/mosfet")
-@login_required
-def mosfet():
-    if db is None:
-        return render_template("mosfet.html", readings=[])
-
-    readings_ref = (
-        db.collection("devices")
-        .document("ESP32_001")
-        .collection("readings")
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
-    )
-
-    readings_cursor = readings_ref.stream()
-    data = []
-    for r in readings_cursor:
-        doc_data = r.to_dict()
-        created = doc_data.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
-        turb = normalize_turbidity(doc_data.get("turbidity"))
-        data.append(
-            {
-                "temperature": doc_data.get("temperature"),
-                "ph": doc_data.get("ph"),
-                "ammonia": doc_data.get("ammonia"),
-                "turbidity": turb,
-                "createdAt": created_str,
-            }
-        )
-
-    return render_template("mosfet.html", readings=data)
-
-
-# ================== FEEDING CONTROL PAGE ==================
-
-@app.route("/control_feeding")
-@login_required
-def control_feeding_page():
-    if db is None:
-        return render_template(
-            "control.html",
-            error="Firestore not initialized on server",
-            readings=[],
-            all_readings=[],
-            summary="Error loading data",
-            chart_labels=[],
-            chart_temp=[],
-            chart_ph=[],
-            chart_ammonia=[],
-            chart_turbidity=[],
-        )
-    try:
-        readings_ref = (
-            db.collection("devices")
-            .document("ESP32_001")
-            .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(10)
-        )
-        readings = []
-        for doc_snap in readings_ref.stream():
-            d = doc_snap.to_dict()
-            created = d.get("createdAt")
-            readings.append(
-                {
-                    "temperature": d.get("temperature"),
-                    "ph": d.get("ph"),
-                    "ammonia": d.get("ammonia"),
-                    "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": (
-                        created.strftime("%Y-%m-%d %H:%M:%S")
-                        if created
-                        else ""
-                    ),
-                }
-            )
-
-        all_readings_ref = (
-            db.collection("devices")
-            .document("ESP32_001")
-            .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
-        )
-        all_readings = []
-        for doc_snap in all_readings_ref.stream():
-            d = doc_snap.to_dict()
-            created = d.get("createdAt")
-            all_readings.append(
-                {
-                    "temperature": d.get("temperature"),
-                    "ph": d.get("ph"),
-                    "ammonia": d.get("ammonia"),
-                    "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": (
-                        created.strftime("%Y-%m-%d %H:%M:%S")
-                        if created
-                        else ""
-                    ),
-                }
-            )
-
-        chart_labels = []
-        chart_temp = []
-        chart_ph = []
-        chart_ammonia = []
-        chart_turbidity = []
-
-        for r in reversed(readings):
-            chart_labels.append(r.get("createdAt", "N/A"))
-            chart_temp.append(r.get("temperature", 0))
-            chart_ph.append(r.get("ph", 0))
-            chart_ammonia.append(r.get("ammonia", 0))
-            chart_turbidity.append(r.get("turbidity", 0))
-
-        summary = "Feeding & Motor Control Dashboard"
-
-        return render_template(
-            "control.html",
-            readings=readings,
-            all_readings=all_readings,
-            summary=summary,
-            chart_labels=chart_labels,
-            chart_temp=chart_temp,
-            chart_ph=chart_ph,
-            chart_ammonia=chart_ammonia,
-            chart_turbidity=chart_turbidity,
-        )
-    except Exception as e:
-        return render_template(
-            "control.html",
-            error=str(e),
-            readings=[],
-            all_readings=[],
-            summary="Error loading data",
-            chart_labels=[],
-            chart_temp=[],
-            chart_ph=[],
-            chart_ammonia=[],
-            chart_turbidity=[],
-        )
-
-
-# ================== PDF EXPORT (LAST 24 HOURS) ==================
-
-@app.route("/export_pdf")
-@login_required
-def export_pdf():
-    if db is None:
-        return jsonify(
-            {"status": "error",
-             "message": "Firestore not initialized on server"}
-        ), 500
-
-    try:
-        now = datetime.utcnow()
-        twenty_four_hours_ago = now - timedelta(hours=24)
-
-        readings_ref = (
-            db.collection("devices")
-            .document("ESP32_001")
-            .collection("readings")
-            .where("createdAt", ">=", twenty_four_hours_ago)
-            .order_by("createdAt", direction=firestore.Query.ASCENDING)
-        )
-
-        readings_cursor = readings_ref.stream()
-        data = []
-        for r in readings_cursor:
-            doc_data = r.to_dict()
-            data.append(
-                {
-                    "temperature": doc_data.get("temperature"),
-                    "ph": doc_data.get("ph"),
-                    "ammonia": doc_data.get("ammonia"),
-                    "turbidity": normalize_turbidity(
-                        doc_data.get("turbidity")
-                    ),
-                    "createdAt": doc_data.get("createdAt"),
-                }
-            )
-
-        if len(data) > 300:
-            data = data[-300:]
-
-        pdf_buffer = io.BytesIO()
-        doc_pdf = SimpleDocTemplate(pdf_buffer, pagesize=letter)
-        elements = []
-        styles = getSampleStyleSheet()
-
-        title_style = ParagraphStyle(
-            "CustomTitle",
-            parent=styles["Heading1"],
-            fontSize=20,
-            textColor=colors.HexColor("#1f77b4"),
-            alignment=1,
-            spaceAfter=20,
-        )
-        elements.append(
-            Paragraph("🐟 Water Quality Monitoring Report", title_style)
-        )
-        elements.append(
-            Paragraph(
-                f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')} (last 24 hours)",
-                styles["Normal"],
-            )
-        )
-        elements.append(Spacer(1, 0.2 * inch))
-
-        table_data = [
-            ["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]
-        ]
-
-        if data:
-            for r in data:
-                created_dt = r["createdAt"]
-                if isinstance(created_dt, datetime):
-                    created_str = created_dt.strftime("%Y-%m-%d %H:%M:%S")
-                else:
-                    created_str = str(created_dt) if created_dt else ""
-                table_data.append(
-                    [
-                        created_str,
-                        "" if r["temperature"] is None
-                        else f"{r['temperature']:.2f}",
-                        "" if r["ph"] is None
-                        else f"{r['ph']:.2f}",
-                        "" if r["ammonia"] is None
-                        else f"{r['ammonia']:.2f}",
-                        "" if r["turbidity"] is None
-                        else f"{r['turbidity']:.2f}",
-                    ]
-                )
-        else:
-            table_data.append(["No data in last 24 hours", "", "", "", ""])
-
-        table = Table(table_data, repeatRows=1)
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, 0), 10),
-                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-                ]
-            )
-        )
-
-        elements.append(
-            Paragraph("Recent Sensor Readings (24 hours)", styles["Heading2"])
-        )
-        elements.append(table)
-
-        doc_pdf.build(elements)
-        pdf_buffer.seek(0)
-
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
-        return send_file(
-            pdf_buffer,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name=f"water_quality_24h_{timestamp}.pdf",
-        )
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-# ================== TEST & HEALTH ==================
-
-@app.route("/test_firestore")
-def test_firestore():
-    try:
-        if db is None:
-            return jsonify(
-                {"status": "error",
-                 "message": "Firestore not initialized on server"}
-            ), 500
-
-        doc = db.collection("devices").document("ESP32_001").get()
-        return jsonify({"status": "ok", "exists": doc.exists}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/ping", methods=["GET"])
-def ping():
-    return jsonify({"status": "ok", "message": "Server reachable"}), 200
-
-
-# ================== MAIN (LOCAL ONLY) ==================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
