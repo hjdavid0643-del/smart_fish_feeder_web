@@ -9,7 +9,7 @@ from functools import wraps
 from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime, timedelta
 import os
-    import io
+import io      # <-- no spaces or tabs before 'import'
 import json
 
 from reportlab.lib.pagesizes import letter
