@@ -28,11 +28,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
+serializer = URLSafeTimedSerializer(app.secret_key)
+
 
 # ================== FIREBASE SETUP ==================
 
 def init_firebase():
-    """Initialize Firebase Admin from env var or secret file, without crashing app."""
+    """Initialize Firebase Admin from env var or secret file."""
     firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
     try:
         if firebase_creds:
@@ -45,7 +47,6 @@ def init_firebase():
             )
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
-        # Use named parameter 'credential' to avoid misinterpreting args
         if not firebase_admin._apps:
             firebase_admin.initialize_app(credential=cred)
 
@@ -56,7 +57,6 @@ def init_firebase():
 
 
 db = init_firebase()
-serializer = URLSafeTimedSerializer(app.secret_key)
 
 
 # ================== HELPERS ==================
@@ -112,12 +112,16 @@ def login():
         password = request.form.get("password")
 
         if not email or not password:
-            return render_template("login.html",
-                                   error="Please enter email and password")
+            return render_template(
+                "login.html",
+                error="Please enter email and password",
+            )
 
         if db is None:
-            return render_template("login.html",
-                                   error="Firestore not initialized on server")
+            return render_template(
+                "login.html",
+                error="Firestore not initialized on server",
+            )
 
         try:
             users_q = (
@@ -128,17 +132,23 @@ def login():
             )
             user_doc = next(users_q, None)
         except Exception as e:
-            return render_template("login.html",
-                                   error=f"Firestore error: {e}")
+            return render_template(
+                "login.html",
+                error=f"Firestore error: {e}",
+            )
 
         if not user_doc:
-            return render_template("login.html",
-                                   error="Invalid email or password")
+            return render_template(
+                "login.html",
+                error="Invalid email or password",
+            )
 
         data = user_doc.to_dict()
         if data.get("password") != password:
-            return render_template("login.html",
-                                   error="Invalid email or password")
+            return render_template(
+                "login.html",
+                error="Invalid email or password",
+            )
 
         session["user"] = email
         session["role"] = data.get("role", "worker")
@@ -160,12 +170,16 @@ def register():
         password = request.form.get("password")
 
         if not email or not password:
-            return render_template("register.html",
-                                   error="Please fill all fields")
+            return render_template(
+                "register.html",
+                error="Please fill all fields",
+            )
 
         if db is None:
-            return render_template("register.html",
-                                   error="Firestore not initialized on server")
+            return render_template(
+                "register.html",
+                error="Firestore not initialized on server",
+            )
 
         try:
             existing = (
@@ -175,15 +189,19 @@ def register():
                 .stream()
             )
             if next(existing, None):
-                return render_template("register.html",
-                                       error="Email already exists")
+                return render_template(
+                    "register.html",
+                    error="Email already exists",
+                )
 
             db.collection("users").add(
                 {"email": email, "password": password, "role": "worker"}
             )
         except Exception as e:
-            return render_template("register.html",
-                                   error=f"Firestore error: {e}")
+            return render_template(
+                "register.html",
+                error=f"Firestore error: {e}",
+            )
 
         return redirect(url_for("login"))
 
@@ -195,12 +213,16 @@ def reset_password():
     if request.method == "POST":
         email = request.form.get("email")
         if not email:
-            return render_template("reset.html",
-                                   error="Please enter your email")
+            return render_template(
+                "reset.html",
+                error="Please enter your email",
+            )
 
         if db is None:
-            return render_template("reset.html",
-                                   error="Firestore not initialized on server")
+            return render_template(
+                "reset.html",
+                error="Firestore not initialized on server",
+            )
 
         try:
             users_q = (
@@ -211,8 +233,10 @@ def reset_password():
             )
             user_doc = next(users_q, None)
         except Exception as e:
-            return render_template("reset.html",
-                                   error=f"Firestore error: {e}")
+            return render_template(
+                "reset.html",
+                error=f"Firestore error: {e}",
+            )
 
         if not user_doc:
             return render_template("reset.html", error="Email not found")
@@ -220,9 +244,11 @@ def reset_password():
         token = serializer.dumps(email, salt="password-reset")
         reset_link = url_for("change_password", token=token, _external=True)
 
-        return render_template("reset.html",
-                               success=True,
-                               reset_link=reset_link)
+        return render_template(
+            "reset.html",
+            success=True,
+            reset_link=reset_link,
+        )
 
     return render_template("reset.html")
 
@@ -237,12 +263,16 @@ def change_password(token):
     if request.method == "POST":
         new_password = request.form.get("password")
         if not new_password:
-            return render_template("change.html",
-                                   error="Please enter a new password")
+            return render_template(
+                "change.html",
+                error="Please enter a new password",
+            )
 
         if db is None:
-            return render_template("change.html",
-                                   error="Firestore not initialized on server")
+            return render_template(
+                "change.html",
+                error="Firestore not initialized on server",
+            )
 
         try:
             users_q = (
@@ -253,8 +283,10 @@ def change_password(token):
             )
             user_doc = next(users_q, None)
         except Exception as e:
-            return render_template("change.html",
-                                   error=f"Firestore error: {e}")
+            return render_template(
+                "change.html",
+                error=f"Firestore error: {e}",
+            )
 
         if not user_doc:
             return "User not found"
@@ -350,7 +382,8 @@ def dashboard():
         if hopper_doc.exists:
             hdata = hopper_doc.to_dict()
             level_percent = (
-                hdata.get("feed_level_percent") or hdata.get("water_level_percent")
+                hdata.get("feed_level_percent")
+                or hdata.get("water_level_percent")
             )
             if level_percent is not None and level_percent < 20:
                 low_feed_alert = (
@@ -455,9 +488,11 @@ def control_feeding_page():
                     "ph": d.get("ph"),
                     "ammonia": d.get("ammonia"),
                     "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": created.strftime("%Y-%m-%d %H:%M:%S")
-                    if created
-                    else "",
+                    "createdAt": (
+                        created.strftime("%Y-%m-%d %H:%M:%S")
+                        if created
+                        else ""
+                    ),
                 }
             )
 
@@ -478,9 +513,11 @@ def control_feeding_page():
                     "ph": d.get("ph"),
                     "ammonia": d.get("ammonia"),
                     "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": created.strftime("%Y-%m-%d %H:%M:%S")
-                    if created
-                    else "",
+                    "createdAt": (
+                        created.strftime("%Y-%m-%d %H:%M:%S")
+                        if created
+                        else ""
+                    ),
                 }
             )
 
@@ -531,8 +568,11 @@ def control_feeding_page():
 @login_required
 def export_pdf():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
+
     try:
         now = datetime.utcnow()
         twenty_four_hours_ago = now - timedelta(hours=24)
@@ -554,10 +594,16 @@ def export_pdf():
                     "temperature": doc_data.get("temperature"),
                     "ph": doc_data.get("ph"),
                     "ammonia": doc_data.get("ammonia"),
-                    "turbidity": normalize_turbidity(doc_data.get("turbidity")),
+                    "turbidity": normalize_turbidity(
+                        doc_data.get("turbidity")
+                    ),
                     "createdAt": doc_data.get("createdAt"),
                 }
             )
+
+        # Optional light cap to reduce memory usage on Render
+        if len(data) > 300:
+            data = data[-300:]
 
         pdf_buffer = io.BytesIO()
         doc_pdf = SimpleDocTemplate(pdf_buffer, pagesize=letter)
@@ -572,8 +618,9 @@ def export_pdf():
             alignment=1,
             spaceAfter=20,
         )
-        elements.append(Paragraph("🐟 Water Quality Monitoring Report",
-                                  title_style))
+        elements.append(
+            Paragraph("🐟 Water Quality Monitoring Report", title_style)
+        )
         elements.append(
             Paragraph(
                 f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')} (last 24 hours)",
@@ -596,10 +643,14 @@ def export_pdf():
                 table_data.append(
                     [
                         created_str,
-                        "" if r["temperature"] is None else f"{r['temperature']:.2f}",
-                        "" if r["ph"] is None else f"{r['ph']:.2f}",
-                        "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
-                        "" if r["turbidity"] is None else f"{r['turbidity']:.2f}",
+                        "" if r["temperature"] is None
+                        else f"{r['temperature']:.2f}",
+                        "" if r["ph"] is None
+                        else f"{r['ph']:.2f}",
+                        "" if r["ammonia"] is None
+                        else f"{r['ammonia']:.2f}",
+                        "" if r["turbidity"] is None
+                        else f"{r['turbidity']:.2f}",
                     ]
                 )
         else:
@@ -646,8 +697,10 @@ def export_pdf():
 @api_login_required
 def control_motor():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -662,10 +715,11 @@ def control_motor():
                 },
                 merge=True,
             )
-            return jsonify({"status": "success",
-                            "message": "Motor turned OFF"}), 200
+            return jsonify(
+                {"status": "success", "message": "Motor turned OFF"}
+            ), 200
 
-        elif action == "on":
+        if action == "on":
             db.collection("devices").document("ESP32_001").set(
                 {
                     "motor_speed": int(speed),
@@ -675,15 +729,21 @@ def control_motor():
                 merge=True,
             )
             return jsonify(
-                {"status": "success",
-                 "message": f"Motor turned ON at {speed}%"},
+                {
+                    "status": "success",
+                    "message": f"Motor turned ON at {speed}%",
+                }
             ), 200
 
-        elif action == "set_speed":
+        if action == "set_speed":
             speed_value = int(speed)
             if speed_value < 0 or speed_value > 100:
-                return jsonify({"status": "error",
-                                "message": "Speed must be 0-100"}), 400
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "Speed must be 0-100",
+                    }
+                ), 400
 
             db.collection("devices").document("ESP32_001").set(
                 {
@@ -694,8 +754,10 @@ def control_motor():
                 merge=True,
             )
             return jsonify(
-                {"status": "success",
-                 "message": f"Speed set to {speed_value}%"},
+                {
+                    "status": "success",
+                    "message": f"Speed set to {speed_value}%",
+                }
             ), 200
 
         return jsonify({"status": "error", "message": "Invalid action"}), 400
@@ -707,8 +769,10 @@ def control_motor():
 @api_login_required
 def get_motor_status():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -720,6 +784,7 @@ def get_motor_status():
                     "motor_status": data.get("motor_status", "off"),
                 }
             ), 200
+
         return jsonify(
             {
                 "status": "success",
@@ -735,8 +800,10 @@ def get_motor_status():
 @api_login_required
 def control_feeder():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         data = request.get_json() or request.form
         action = data.get("action")
@@ -751,10 +818,11 @@ def control_feeder():
                 },
                 merge=True,
             )
-            return jsonify({"status": "success",
-                            "message": "Feeder turned OFF"}), 200
+            return jsonify(
+                {"status": "success", "message": "Feeder turned OFF"}
+            ), 200
 
-        elif action == "on":
+        if action == "on":
             db.collection("devices").document("ESP32_001").set(
                 {
                     "feeder_speed": int(speed),
@@ -764,15 +832,21 @@ def control_feeder():
                 merge=True,
             )
             return jsonify(
-                {"status": "success",
-                 "message": f"Feeder turned ON at {speed}%"},
+                {
+                    "status": "success",
+                    "message": f"Feeder turned ON at {speed}%",
+                }
             ), 200
 
-        elif action == "set_speed":
+        if action == "set_speed":
             speed_value = int(speed)
             if speed_value < 0 or speed_value > 100:
-                return jsonify({"status": "error",
-                                "message": "Speed must be 0-100"}), 400
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": "Speed must be 0-100",
+                    }
+                ), 400
 
             db.collection("devices").document("ESP32_001").set(
                 {
@@ -783,8 +857,10 @@ def control_feeder():
                 merge=True,
             )
             return jsonify(
-                {"status": "success",
-                 "message": f"Feeder speed set to {speed_value}%"},
+                {
+                    "status": "success",
+                    "message": f"Feeder speed set to {speed_value}%",
+                }
             ), 200
 
         return jsonify({"status": "error", "message": "Invalid action"}), 400
@@ -796,8 +872,10 @@ def control_feeder():
 @api_login_required
 def get_feeding_status():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -809,6 +887,7 @@ def get_feeding_status():
                     "feeder_status": data.get("feeder_status", "off"),
                 }
             ), 200
+
         return jsonify(
             {
                 "status": "success",
@@ -826,8 +905,10 @@ def get_feeding_status():
 @api_login_required
 def save_feeding_schedule():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         data = request.get_json() or request.form
         first_feed = data.get("first_feed")
@@ -835,8 +916,9 @@ def save_feeding_schedule():
         duration = data.get("duration")
 
         if not first_feed or not second_feed or not duration:
-            return jsonify({"status": "error",
-                            "message": "All fields required"}), 400
+            return jsonify(
+                {"status": "error", "message": "All fields required"}
+            ), 400
 
         db.collection("devices").document("ESP32_001").set(
             {
@@ -862,8 +944,10 @@ def save_feeding_schedule():
 @api_login_required
 def get_feeding_schedule_info():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
@@ -876,8 +960,10 @@ def get_feeding_schedule_info():
                     "enabled": data.get("schedule_enabled", False),
                 }
             ), 200
-        return jsonify({"status": "success",
-                        "schedule": {}, "enabled": False}), 200
+
+        return jsonify(
+            {"status": "success", "schedule": {}, "enabled": False}
+        ), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -887,13 +973,16 @@ def get_feeding_schedule_info():
 @app.route("/add_reading", methods=["POST"])
 def add_reading():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         data = request.get_json()
         if not data:
-            return jsonify({"status": "error",
-                            "message": "No data provided"}), 400
+            return jsonify(
+                {"status": "error", "message": "No data provided"}
+            ), 400
 
         device_id = data.get("device_id", "ESP32_001")
 
@@ -921,8 +1010,10 @@ def add_reading():
         )
 
         return jsonify(
-            {"status": "success",
-             "message": f"Reading saved for {device_id}"}
+            {
+                "status": "success",
+                "message": f"Reading saved for {device_id}",
+            }
         ), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -931,8 +1022,10 @@ def add_reading():
 @app.route("/api/latest_readings", methods=["GET"])
 def api_latest_readings():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -983,8 +1076,10 @@ def api_latest_readings():
 @app.route("/historical", methods=["GET"])
 def historical():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -1020,8 +1115,10 @@ def historical():
 @app.route("/api/ultrasonic_esp32_2", methods=["GET"])
 def api_ultrasonic_esp32_2():
     if db is None:
-        return jsonify({"status": "error",
-                        "message": "Firestore not initialized on server"}), 500
+        return jsonify(
+            {"status": "error",
+             "message": "Firestore not initialized on server"}
+        ), 500
     try:
         readings_ref = (
             db.collection("devices")
@@ -1063,7 +1160,8 @@ def test_firestore():
     try:
         if db is None:
             return jsonify(
-                {"status": "error", "message": "Firestore not initialized on server"}
+                {"status": "error",
+                 "message": "Firestore not initialized on server"}
             ), 500
 
         doc = db.collection("devices").document("ESP32_001").get()
