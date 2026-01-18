@@ -134,8 +134,7 @@ def login():
             )
             user_doc = next(users_q, None)
         except ResourceExhausted:
-            # Firestore quota exceeded (429 ResourceExhausted: Quota exceeded.)
-            # show friendly error instead of 500 Internal Server Error
+            # Firestore quota exceeded (429)
             return render_template(
                 "login.html",
                 error="Database quota exceeded. Please try again later.",
@@ -699,10 +698,7 @@ def export_pdf():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# ================== MOTOR & FEEDER CONTROL ==================
-# (unchanged from your version; omitted here for brevity in this message)
-# ... keep the rest of your routes exactly as in your last code block ...
-
+# ================== TEST & HEALTH ==================
 
 @app.route("/test_firestore")
 def test_firestore():
