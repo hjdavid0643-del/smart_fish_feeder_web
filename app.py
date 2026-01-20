@@ -149,7 +149,7 @@ def login():
                 error="Invalid email or password"
             )
 
-        data = user_doc.to_dict()
+        data = user_doc.to_dict() or {}
         if data.get("password") != password:
             return render_template(
                 "login.html",
@@ -340,20 +340,53 @@ def dashboard():
             low_feed_color="#ff7043",
         )
 
-    readings_ref = (
-        db.collection("devices")
-        .document("ESP32_001")
-        .collection("readings")
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
-    )
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32_001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        readings_cursor = readings_ref.stream()
+    except ResourceExhausted:
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Database quota exceeded. Please try again later.",
+            alert_color="gray",
+            time_labels=[],
+            temp_values=[],
+            ph_values=[],
+            ammonia_values=[],
+            turbidity_values=[],
+            feeder_alert="Feeder status unavailable",
+            feeder_alert_color="gray",
+            low_feed_alert=None,
+            low_feed_color="#ff7043",
+        )
+    except Exception:
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Error loading data.",
+            alert_color="gray",
+            time_labels=[],
+            temp_values=[],
+            ph_values=[],
+            ammonia_values=[],
+            turbidity_values=[],
+            feeder_alert="Feeder status unavailable",
+            feeder_alert_color="gray",
+            low_feed_alert=None,
+            low_feed_color="#ff7043",
+        )
 
-    readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
-        doc_data = r.to_dict()
+        doc_data = r.to_dict() or {}
         created = doc_data.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
         turb = normalize_turbidity(doc_data.get("turbidity"))
         data.append(
             {
@@ -385,14 +418,12 @@ def dashboard():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
-            d = device_doc.to_dict()
+            d = device_doc.to_dict() or {}
             feeder_status = d.get("feeder_status", "off")
             feeder_speed = d.get("feeder_speed", 0)
 
             if feeder_status == "on" and feeder_speed and feeder_speed > 0:
-                feeder_alert = (
-                    f"🐟 Feeding in progress at {feeder_speed}% speed"
-                )
+                feeder_alert = f"🐟 Feeding in progress at {feeder_speed}% speed"
                 feeder_alert_color = "limegreen"
     except Exception:
         feeder_alert = "Feeder status unavailable"
@@ -403,15 +434,14 @@ def dashboard():
     try:
         hopper_doc = db.collection("devices").document("ESP32_002").get()
         if hopper_doc.exists:
-            hdata = hopper_doc.to_dict()
+            hdata = hopper_doc.to_dict() or {}
             level_percent = (
                 hdata.get("feed_level_percent")
                 or hdata.get("water_level_percent")
             )
             if level_percent is not None and level_percent < 20:
                 low_feed_alert = (
-                    f"⚠️ Low feed level: {level_percent:.1f}% – "
-                    f"please refill the hopper"
+                    f"⚠️ Low feed level: {level_percent:.1f}% – please refill the hopper"
                 )
     except Exception:
         pass
@@ -459,9 +489,9 @@ def mosfet():
     readings_cursor = readings_ref.stream()
     data = []
     for r in readings_cursor:
-        doc_data = r.to_dict()
+        doc_data = r.to_dict() or {}
         created = doc_data.get("createdAt")
-        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+        created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
         turb = normalize_turbidity(doc_data.get("turbidity"))
         data.append(
             {
@@ -504,17 +534,16 @@ def control_feeding_page():
         )
         readings = []
         for doc_snap in readings_ref.stream():
-            d = doc_snap.to_dict()
+            d = doc_snap.to_dict() or {}
             created = d.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
             readings.append(
                 {
                     "temperature": d.get("temperature"),
                     "ph": d.get("ph"),
                     "ammonia": d.get("ammonia"),
                     "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": created.strftime("%Y-%m-%d %H:%M:%S")
-                    if created
-                    else "",
+                    "createdAt": created_str,
                 }
             )
 
@@ -527,17 +556,16 @@ def control_feeding_page():
         )
         all_readings = []
         for doc_snap in all_readings_ref.stream():
-            d = doc_snap.to_dict()
+            d = doc_snap.to_dict() or {}
             created = d.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
             all_readings.append(
                 {
                     "temperature": d.get("temperature"),
                     "ph": d.get("ph"),
                     "ammonia": d.get("ammonia"),
                     "turbidity": normalize_turbidity(d.get("turbidity")),
-                    "createdAt": created.strftime("%Y-%m-%d %H:%M:%S")
-                    if created
-                    else "",
+                    "createdAt": created_str,
                 }
             )
 
@@ -591,6 +619,7 @@ def export_pdf():
         return jsonify(
             {"status": "error", "message": "Firestore not initialized on server"}
         ), 500
+
     try:
         now = datetime.utcnow()
         twenty_four_hours_ago = now - timedelta(hours=24)
@@ -603,10 +632,18 @@ def export_pdf():
             .order_by("createdAt", direction=firestore.Query.ASCENDING)
         )
 
-        readings_cursor = readings_ref.stream()
+        try:
+            readings_cursor = readings_ref.stream()
+        except ResourceExhausted:
+            return jsonify({
+                "status": "error",
+                "message": "Database quota exceeded while generating PDF. "
+                           "Please try again later."
+            }), 503
+
         data = []
         for r in readings_cursor:
-            doc_data = r.to_dict()
+            doc_data = r.to_dict() or {}
             data.append(
                 {
                     "temperature": doc_data.get("temperature"),
@@ -664,6 +701,7 @@ def export_pdf():
         else:
             table_data.append(["No data in last 24 hours", "", "", "", ""])
 
+
         table = Table(table_data, repeatRows=1)
         table.setStyle(
             TableStyle(
@@ -695,6 +733,7 @@ def export_pdf():
             as_attachment=True,
             download_name=f"water_quality_24h_{timestamp}.pdf",
         )
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -776,7 +815,7 @@ def get_motor_status():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
-            data = device_doc.to_dict()
+            data = device_doc.to_dict() or {}
             return jsonify(
                 {
                     "status": "success",
@@ -869,7 +908,7 @@ def get_feeding_status():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
-            data = device_doc.to_dict()
+            data = device_doc.to_dict() or {}
             return jsonify(
                 {
                     "status": "success",
@@ -934,7 +973,7 @@ def get_feeding_schedule_info():
     try:
         device_doc = db.collection("devices").document("ESP32_001").get()
         if device_doc.exists:
-            data = device_doc.to_dict()
+            data = device_doc.to_dict() or {}
             schedule = data.get("feeding_schedule", {})
             return jsonify(
                 {
@@ -1013,9 +1052,9 @@ def api_latest_readings():
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
-            doc_data = r.to_dict()
+            doc_data = r.to_dict() or {}
             created = doc_data.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
             turb = normalize_turbidity(doc_data.get("turbidity"))
             data.append(
                 {
@@ -1065,9 +1104,9 @@ def historical():
         readings = readings_ref.stream()
         data = []
         for r in readings:
-            doc_data = r.to_dict()
+            doc_data = r.to_dict() or {}
             created = doc_data.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
             turb = normalize_turbidity(doc_data.get("turbidity"))
             data.append(
                 {
@@ -1104,9 +1143,9 @@ def api_ultrasonic_esp32_2():
         readings_cursor = readings_ref.stream()
         data = []
         for r in readings_cursor:
-            doc_data = r.to_dict()
+            doc_data = r.to_dict() or {}
             created = doc_data.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if created else ""
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else ""
             data.append(
                 {
                     "distance": doc_data.get("distance"),
