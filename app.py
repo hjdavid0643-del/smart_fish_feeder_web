@@ -52,6 +52,8 @@ def init_firebase():
 
         return firestore.client()
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
 
@@ -131,7 +133,9 @@ def login():
                 .limit(1)
                 .stream()
             )
+            # make sure ResourceExhausted from Firestore stream is caught
             user_doc = next(users_q, None)
+
         except ResourceExhausted:
             return render_template(
                 "login.html",
@@ -188,13 +192,15 @@ def register():
             )
 
         try:
-            existing = (
+            existing_q = (
                 db.collection("users")
                 .where("email", "==", email)
                 .limit(1)
                 .stream()
             )
-            if next(existing, None):
+            existing_doc = next(existing_q, None)
+
+            if existing_doc:
                 return render_template(
                     "register.html",
                     error="Email already exists"
@@ -700,7 +706,6 @@ def export_pdf():
                 )
         else:
             table_data.append(["No data in last 24 hours", "", "", "", ""])
-
 
         table = Table(table_data, repeatRows=1)
         table.setStyle(
