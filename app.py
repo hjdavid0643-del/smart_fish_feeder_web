@@ -13,15 +13,77 @@ import io
 import json
 
 from google.api_core.exceptions import ResourceExhausted
+import os
 
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle,
-    Paragraph, Spacer
-)
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib import colors
+FIRESTORE_LOGIN_DISABLED = True  # temporary hard‑coded flag
+# or: FIRESTORE_LOGIN_DISABLED = os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1"
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    # If quota is dead, skip Firestore completely
+    if FIRESTORE_LOGIN_DISABLED:
+        # Always render template with friendly message
+        return render_template(
+            "login.html",
+            error="Login temporarily disabled: Firestore quota exceeded. "
+                  "Please try again later."
+        )
+
+    if request.method == "POST":
+        email = request.form.get("email")
+        password = request.form.get("password")
+
+        if not email or not password:
+            return render_template(
+                "login.html",
+                error="Please enter email and password"
+            )
+
+        if db is None:
+            return render_template(
+                "login.html",
+                error="Firestore not initialized on server"
+            )
+
+        try:
+            users_q = (
+                db.collection("users")
+                .where("email", "==", email)
+                .limit(1)
+                .stream()
+            )
+            user_doc = next(users_q, None)
+
+        except ResourceExhausted:
+            return render_template(
+                "login.html",
+                error="Database quota exceeded. Please try again later."
+            )
+        except Exception as e:
+            return render_template(
+                "login.html",
+                error=f"Firestore error: {e}"
+            )
+
+        if not user_doc:
+            return render_template(
+                "login.html",
+                error="Invalid email or password"
+            )
+
+        data = user_doc.to_dict() or {}
+        if data.get("password") != password:
+            return render_template(
+                "login.html",
+                error="Invalid email or password"
+            )
+
+        session["user"] = email
+        session["role"] = data.get("role", "worker")
+        return redirect(url_for("dashboard"))
+
+    return render_template("login.html")
+
 
 
 # ================== APP SETUP ==================
