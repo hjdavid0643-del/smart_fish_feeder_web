@@ -22,7 +22,7 @@ from google.api_core.exceptions import ResourceExhausted
 # =========================
 # CONFIG / FLAGS
 # =========================
-FIRESTORE_LOGIN_DISABLED = True   # temporary hardcoded flag to bypass login on quota issues
+FIRESTORE_LOGIN_DISABLED = False   # temporary hardcoded flag to bypass login on quota issues
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
