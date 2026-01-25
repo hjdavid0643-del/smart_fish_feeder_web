@@ -32,17 +32,9 @@ CORS(app)
 # FIREBASE / FIRESTORE INIT
 # =========================
 def init_firebase():
-    """
-    Initialize Firebase Admin from env var or service account file.
-    """
-    firebase_creds = os.environ.get("FIREBASE_CREDENTIALS")
     try:
-        if firebase_creds:
-            cred_dict = json.loads(firebase_creds)
-            cred = credentials.Certificate(cred_dict)
-        else:
-            FIREBASE_KEY_PATH = "etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-a724074a37.json"
-            cred = credentials.Certificate(FIREBASE_KEY_PATH)
+        FIREBASE_KEY_PATH = "etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-ee27b56ee6.json"
+        cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
         if not firebase_admin.apps:
             firebase_admin.initialize_app(credential=cred)
@@ -53,7 +45,6 @@ def init_firebase():
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
-
 
 db = init_firebase()
 serializer = URLSafeTimedSerializer(app.secret_key)
