@@ -33,22 +33,15 @@ CORS(app)
 # =========================
 def init_firebase():
     try:
-        # Render secret file path. In the Render dashboard, add a Secret File
-        # with this filename and paste your Firebase service account JSON.
         FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-ee27b56ee6.json"
-
         cred = credentials.Certificate(FIREBASE_KEY_PATH)
-
-        if not firebase_admin.apps:
-            firebase_admin.initialize_app(credential=cred)
-
-        return firestore.client()
+        firebase_app = firebase_admin.initialize_app(cred)
+        return firestore.client(app=firebase_app)
     except Exception as e:
         import traceback
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
-
 
 db = init_firebase()
 serializer = URLSafeTimedSerializer(app.secret_key)
