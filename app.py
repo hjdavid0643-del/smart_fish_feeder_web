@@ -31,20 +31,24 @@ CORS(app)
 # =========================
 # FIREBASE / FIRESTORE INIT
 # =========================
+firebase_app = None  # will hold the initialized Firebase app
+
+
 def init_firebase():
     """
     Initialize Firebase Admin using a JSON string stored in
     env var GOOGLE_APPLICATION_CREDENTIALS_JSON on Render.
     """
+    global firebase_app
     try:
-        if not firebase_admin.apps:
+        if firebase_app is None:
             sa_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
             if not sa_json:
                 raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS_JSON not set")
             info = json.loads(sa_json)
             cred = credentials.Certificate(info)
-            firebase_admin.initialize_app(cred)
-        return firestore.client()
+            firebase_app = firebase_admin.initialize_app(cred)
+        return firestore.client(app=firebase_app)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -431,8 +435,6 @@ def dashboard():
         lowfeedcolor=lowfeedcolor,
     )
 
-# ... (rest of your routes remain exactly the same as in your original file)
-# MOTOR / FEEDER CONTROL, FEEDING SCHEDULE, SENSOR APIs, /testfirestore, /ping, etc.
 
 # =========================
 # MAIN
