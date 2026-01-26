@@ -33,7 +33,7 @@ CORS(app)
 # =========================
 def init_firebase():
     try:
-        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-ee27b56ee6.json"
+        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
         cred = credentials.Certificate(FIREBASE_KEY_PATH)
         firebase_app = firebase_admin.initialize_app(cred)
         return firestore.client(app=firebase_app)
@@ -42,6 +42,7 @@ def init_firebase():
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
+
 
 db = init_firebase()
 serializer = URLSafeTimedSerializer(app.secret_key)
