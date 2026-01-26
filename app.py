@@ -33,7 +33,7 @@ CORS(app)
 # =========================
 def init_firebase():
     try:
-        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-…"  # exact filename
+        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-ee27b56ee6.json"
 
         cred = credentials.Certificate(FIREBASE_KEY_PATH)
 
