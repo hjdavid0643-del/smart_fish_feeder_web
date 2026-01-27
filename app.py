@@ -56,6 +56,7 @@ def init_firebase():
 db = init_firebase()
 
 
+
 # =========================
 # HELPERS
 # =========================
@@ -65,7 +66,6 @@ def login_required(f):
         if "user" not in session:
             return redirect(url_for("login"))
         return f(*args, **kwargs)
-
     return decorated
 
 
@@ -75,7 +75,6 @@ def api_login_required(f):
         if "user" not in session:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
-
     return decorated
 
 
@@ -97,13 +96,55 @@ def to_float_or_none(value):
     except (TypeError, ValueError):
         return None
 
+def normalize_turbidity(value):
+    ...
+    return v
+
+
+def to_float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.route("/update_temp_ph", methods=["POST"])
+def update_temp_ph():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
+    try:
+        data = request.get_json() or {}
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+
+        if temperature is None or ph is None:
+            return jsonify(
+                {"status": "error", "message": "temperature and ph required"}
+            ), 400
+
+        db.collection("devices").document("ESP32_001").set(
+            {
+                "temperature": temperature,
+                "ph": ph,
+                "updatedAt": datetime.utcnow(),
+            },
+            merge=True,
+        )
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # =========================
 # BASIC ROUTES
 # =========================
 @app.route("/")
 def home():
-    return redirect(url_for("login"))
+    
+   return redirect(url_for("login"))
 
 
 # =========================
