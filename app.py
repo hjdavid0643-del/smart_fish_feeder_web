@@ -33,8 +33,11 @@ CORS(app)
 def init_firebase():
     try:
         FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
-        cred = credentials.Certificate(FIREBASE_KEY_PATH)
-        firebase_app = firebase_admin.initialize_app(cred)
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(FIREBASE_KEY_PATH)
+            firebase_app = firebase_admin.initialize_app(cred)
+        else:
+            firebase_app = firebase_admin.get_app()
         return firestore.client(app=firebase_app)
     except Exception as e:
         import traceback
@@ -145,8 +148,10 @@ def logout():
     return redirect(url_for("login"))
 
 
-# (Optional) you can keep register/reset routes if you want to manage Firestore users,
-# but if you fully switch to Firebase Auth signup, you may not need these anymore.
+# Simple stub so {{ url_for('register') }} in login.html does not break
+@app.route("/register")
+def register():
+    return "Registration is managed in Firebase Authentication."
 
 
 # =========================
@@ -551,6 +556,7 @@ def exportpdf():
                 )
         else:
             tabledata.append(["No data in last 24 hours", "", "", "", ""])
+
 
         table = Table(tabledata, repeatRows=1)
         table.setStyle(
