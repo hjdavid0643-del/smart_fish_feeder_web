@@ -36,86 +36,25 @@
         }
         button:hover { background-color: #f0f0f0; }
         a { display: block; margin-top: 15px; color: #fff; text-decoration: underline; }
-        .error { color: #ff8080; margin-top: 10px; min-height: 1.2em; }
+        .error { color: #ff8080; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Login</h1>
 
-        <p id="errorMsg" class="error">{{ error or '' }}</p>
+        {% if error %}
+        <p class="error">{{ error }}</p>
+        {% endif %}
 
-        <!-- JS handles login; do not post to /login -->
-        <form id="loginForm" onsubmit="return false;">
-            <input type="email" id="email" placeholder="Email" required>
-            <input type="password" id="password" placeholder="Password" required>
-            <button type="button" id="loginButton">Login</button>
+        <form method="POST">
+            <input type="email" name="email" placeholder="Email" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
         </form>
 
         <a href="/reset_password">Forgot password?</a>
         <a href="{{ url_for('register') }}">Create account</a>
     </div>
-
-    <!-- Firebase JS SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-    <script>
-        // Exact Firebase config from your Firebase console
-      const firebaseConfig = {
-  apiKey: "AIzaSyAiRe0kD9irw4heL4xtnoKSnkE0NM8afDxw",
-  authDomain: "authentication--fish-feeder.firebaseapp.com",
-  databaseURL: "https://authentication--fish-feeder-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "authentication--fish-feeder",
-  storageBucket: "authentication--fish-feeder.firebasestorage.app",
-  messagingSenderId: "359841804188",
-  appId: "1:359841804188:web:3aa4d99298254559512259",
-  measurementId: "G-QWELHSK2DN"
-
-        };
-
-        firebase.initializeApp(firebaseConfig);
-        const auth = firebase.auth();
-
-        document.addEventListener("DOMContentLoaded", function () {
-            const emailInput = document.getElementById("email");
-            const passwordInput = document.getElementById("password");
-            const loginButton = document.getElementById("loginButton");
-            const errorMsg = document.getElementById("errorMsg");
-
-            loginButton.addEventListener("click", function () {
-                const email = emailInput.value.trim();
-                const password = passwordInput.value;
-
-                errorMsg.textContent = "";
-
-                if (!email || !password) {
-                    errorMsg.textContent = "Please enter email and password.";
-                    return;
-                }
-
-                auth.signInWithEmailAndPassword(email, password)
-                    .then(userCredential => userCredential.user.getIdToken())
-                    .then(idToken => {
-                        return fetch("/session-login", {
-                            method: "POST",
-                            headers: {"Content-Type": "application/json"},
-                            body: JSON.stringify({ id_token: idToken })
-                        });
-                    })
-                    .then(res => {
-                        if (res.redirected) {
-                            window.location.href = res.url;  // should go to /dashboard
-                        } else {
-                            return res.json().then(d => {
-                                errorMsg.textContent = d.message || "Login failed.";
-                            });
-                        }
-                    })
-                    .catch(err => {
-                        errorMsg.textContent = err.message;
-                    });
-            });
-        });
-    </script>
 </body>
 </html>
