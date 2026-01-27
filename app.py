@@ -10,22 +10,28 @@ from flask import (
 )
 from flask_cors import CORS
 import firebase_admin
-from firebase_admin import credentials, firestore, auth
+from firebase_admin import credentials, firestore
 from functools import wraps
-from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime, timedelta
 import os
 import io
 from google.api_core.exceptions import ResourceExhausted
 
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+
 # =========================
-# CONFIG / FLAGS
+# CONFIG
 # =========================
-FIRESTORE_LOGIN_DISABLED = False  # keep in case you ever want to block login manually
+FIRESTORE_LOGIN_DISABLED = False
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
+
 
 # =========================
 # FIREBASE / FIRESTORE INIT
@@ -41,13 +47,14 @@ def init_firebase():
         return firestore.client(app=firebase_app)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
 
 
 db = init_firebase()
-serializer = URLSafeTimedSerializer(app.secret_key)
+
 
 # =========================
 # HELPERS
@@ -100,49 +107,41 @@ def home():
 
 
 # =========================
-# AUTH ROUTES (Firebase Auth)
+# AUTH ROUTES (simple session auth)
 # =========================
+# Hard‑coded test user; replace with real user storage later.
+VALID_USERS = {
+    "admin@example.com": "admin123",
+    "worker@example.com": "worker123",
+}
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """
-    Accept both GET and POST so any accidental POST /login
-    from old forms does not cause 405; we always just render the page.
-    """
     if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
         return render_template(
             "login.html",
             error="Login temporarily disabled. Please try again later.",
         )
 
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+
+        if not email or not password:
+            return render_template("login.html", error="Email and password are required.")
+
+        expected_password = VALID_USERS.get(email)
+        if expected_password and expected_password == password:
+            session["user"] = email
+            session["role"] = "worker"
+            return redirect(url_for("dashboard"))
+
+        return render_template("login.html", error="Invalid email or password.")
+
     if "user" in session:
         return redirect(url_for("dashboard"))
     return render_template("login.html")
-
-
-@app.route("/session-login", methods=["POST"])
-def session_login():
-    """
-    Called by frontend JS after Firebase Auth signInWithEmailAndPassword.
-    Expects JSON: { "id_token": "<Firebase ID token>" }
-    """
-    try:
-        data = request.get_json() or {}
-        id_token = data.get("id_token")
-        if not id_token:
-            return jsonify({"status": "error", "message": "Missing token"}), 400
-
-        decoded = auth.verify_id_token(id_token)
-        email = decoded.get("email")
-        if not email:
-            return jsonify({"status": "error", "message": "No email in token"}), 400
-
-        # store authenticated user in session
-        session["user"] = email
-        # if you later store roles in Firestore, you can look them up here
-        session["role"] = "worker"
-        return redirect(url_for("dashboard"))
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 401
 
 
 @app.route("/logout")
@@ -151,10 +150,9 @@ def logout():
     return redirect(url_for("login"))
 
 
-# Simple stub so {{ url_for('register') }} in login.html does not break
 @app.route("/register")
 def register():
-    return "Registration is managed in Firebase Authentication."
+    return "Registration is managed separately (not implemented in backend)."
 
 
 # =========================
@@ -277,9 +275,7 @@ def dashboard():
         hopperdoc = db.collection("devices").document("ESP32002").get()
         if hopperdoc.exists:
             hdata = hopperdoc.to_dict() or {}
-            levelpercent = hdata.get("feedlevelpercent") or hdata.get(
-                "waterlevelpercent"
-            )
+            levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
             if levelpercent is not None and levelpercent < 20:
                 lowfeedalert = (
                     f"Low feed level ({levelpercent:.1f}%). Please refill the hopper."
@@ -467,13 +463,6 @@ def controlfeedingpage():
 # =========================
 # PDF EXPORT (LAST 24 HOURS)
 # =========================
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-
-
 @app.route("/exportpdf")
 @login_required
 def exportpdf():
@@ -526,7 +515,7 @@ def exportpdf():
             parent=styles["Heading1"],
             fontSize=20,
             textColor=colors.HexColor("#1f77b4"),
-            alignment=1,  # center
+            alignment=1,
             spaceAfter=20,
         )
 
@@ -1015,7 +1004,6 @@ def apiultrasonicesp322():
 @app.route("/apicheckfeedcommand", methods=["GET"])
 def apicheckfeedcommand():
     deviceid = request.args.get("deviceid", "ESP32001")
-    # Placeholder: always returns "none"
     return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
 
 
