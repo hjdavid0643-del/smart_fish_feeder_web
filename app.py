@@ -111,9 +111,9 @@ def home():
 # =========================
 # Hard‑coded test user; replace with real user storage later.
 VALID_USERS = {
-    "admin@example.com": "admin123",
-    "worker@example.com": "worker123",
+    "hjdavid0643@iskwela.psau.edu.ph": "0123456789",
 }
+
 
 
 @app.route("/login", methods=["GET", "POST"])
