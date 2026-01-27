@@ -270,7 +270,8 @@
         <h1>🐟 Smart Fish Feeder Dashboard</h1>
 
         <div class="top-buttons">
-            <a class="btn btn-pdf" href="/export_pdf" download>📥 Download PDF</a>
+            <!-- Flask route is /exportpdf -->
+            <a class="btn btn-pdf" href="/exportpdf" download>📥 Download PDF</a>
             <button id="btnHistorical" class="btn btn-view" type="button">
                 View Historical Data
             </button>
@@ -279,7 +280,8 @@
             </button>
         </div>
 
-        <div class="summary" style="background-color: {{ alert_color }};">
+        <!-- Flask passes 'summary' and 'alertcolor' -->
+        <div class="summary" style="background-color: {{ alertcolor }};">
             {{ summary }}
         </div>
 
@@ -438,11 +440,12 @@
         }
     }
 
-    const labels = JSON.parse('{{ time_labels | tojson | safe }}');
-    const tempData = JSON.parse('{{ temp_values | tojson | safe }}');
-    const phData = JSON.parse('{{ ph_values | tojson | safe }}');
-    const ammoniaData = JSON.parse('{{ ammonia_values | tojson | safe }}');
-    const turbidityData = JSON.parse('{{ turbidity_values | tojson | safe }}');
+    // Flask passes timelabels, tempvalues, etc.
+    const labels = JSON.parse('{{ timelabels | tojson | safe }}');
+    const tempData = JSON.parse('{{ tempvalues | tojson | safe }}');
+    const phData = JSON.parse('{{ phvalues | tojson | safe }}');
+    const ammoniaData = JSON.parse('{{ ammoniavalues | tojson | safe }}');
+    const turbidityData = JSON.parse('{{ turbidityvalues | tojson | safe }}');
 
     const ctx = document.getElementById('sensorChart').getContext('2d');
     const sensorChart = new Chart(ctx, {
@@ -516,7 +519,8 @@
     });
 
     function refreshSensorTable() {
-        apiFetch('/api/latest_readings')
+        // Flask route is /apilatestreadings
+        apiFetch('/apilatestreadings')
             .then(data => {
                 if (!data) return;
                 const tbody = document.querySelector('.table-wrapper table tbody');
@@ -544,7 +548,8 @@
     setInterval(refreshSensorTable, 10000);
 
     function loadUltrasonic() {
-        apiFetch('/api/ultrasonic_esp32_2')
+        // Flask route is /apiultrasonicesp322
+        apiFetch('/apiultrasonicesp322')
             .then(data => {
                 if (!data || data.status !== 'success') return;
                 const distances = data.distance || [];
@@ -556,7 +561,8 @@
     }
 
     function feedingControl(action) {
-        apiFetch('/control_feeder', {
+        // Flask route is /controlfeeder
+        apiFetch('/controlfeeder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: action})
@@ -571,10 +577,10 @@
 
     function setFeedSpeed() {
         const speed = document.getElementById('feed-speed-slider').value;
-        apiFetch('/control_feeder', {
+        apiFetch('/controlfeeder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'set_speed', speed: speed})
+            body: JSON.stringify({action: 'setspeed', speed: speed})
         })
         .then(data => {
             if (!data) return;
@@ -585,19 +591,21 @@
     }
 
     function loadFeedingStatus() {
-        apiFetch('/get_feeding_status')
+        // Flask route is /getfeedingstatus
+        apiFetch('/getfeedingstatus')
             .then(data => {
                 if (!data || data.status !== 'success') return;
-                document.getElementById('current-feed-speed').textContent = data.feeder_speed;
+                document.getElementById('current-feed-speed').textContent = data.feederspeed;
                 const statusSpan = document.getElementById('feed-status-text');
-                statusSpan.textContent = data.feeder_status.toUpperCase();
-                statusSpan.style.color = data.feeder_status === 'on' ? '#28a745' : '#dc3545';
+                statusSpan.textContent = data.feederstatus.toUpperCase();
+                statusSpan.style.color = data.feederstatus === 'on' ? '#28a745' : '#dc3545';
             })
             .catch(error => console.error('Failed to load feeding status:', error));
     }
 
     function motorControl(action) {
-        apiFetch('/control_motor', {
+        // Flask route is /controlmotor
+        apiFetch('/controlmotor', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({action: action})
@@ -612,10 +620,10 @@
 
     function setMotorSpeed() {
         const rpm = document.getElementById('rpm-slider').value;
-        apiFetch('/control_motor', {
+        apiFetch('/controlmotor', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action: 'set_speed', speed: rpm})
+            body: JSON.stringify({action: 'setspeed', speed: rpm})
         })
         .then(data => {
             if (!data) return;
@@ -626,13 +634,14 @@
     }
 
     function loadMotorStatus() {
-        apiFetch('/get_motor_status')
+        // Flask route is /getmotorstatus
+        apiFetch('/getmotorstatus')
             .then(data => {
                 if (!data || data.status !== 'success') return;
-                document.getElementById('current-rpm').textContent = data.motor_speed;
+                document.getElementById('current-rpm').textContent = data.motorspeed;
                 const statusSpan = document.getElementById('motor-status-text');
-                statusSpan.textContent = data.motor_status.toUpperCase();
-                statusSpan.style.color = data.motor_status === 'on' ? '#28a745' : '#dc3545';
+                statusSpan.textContent = data.motorstatus.toUpperCase();
+                statusSpan.style.color = data.motorstatus === 'on' ? '#28a745' : '#dc3545';
             })
             .catch(error => console.error('Failed to load motor status:', error));
     }
@@ -643,12 +652,13 @@
         const duration = document.getElementById('feedDuration').value;
 
         try {
-            const data = await apiFetch('/save_feeding_schedule', {
+            // Flask route is /savefeedingschedule; expects firstfeed/secondfeed/duration
+            const data = await apiFetch('/savefeedingschedule', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    first_feed: first,
-                    second_feed: second,
+                    firstfeed: first,
+                    secondfeed: second,
                     duration: duration
                 })
             });
@@ -664,7 +674,8 @@
 
     async function loadScheduleInfo() {
         try {
-            const data = await apiFetch('/get_feeding_schedule_info');
+            // Flask route is /getfeedingscheduleinfo
+            const data = await apiFetch('/getfeedingscheduleinfo');
             if (!data || data.status !== 'success') return;
 
             const schedule = data.schedule || {};
@@ -673,10 +684,10 @@
             const statusBox = document.getElementById('scheduleStatus');
             const text = document.getElementById('currentSchedule');
 
-            if (enabled && schedule.first_feed && schedule.second_feed) {
+            if (enabled && schedule.firstfeed && schedule.secondfeed) {
                 text.textContent =
-                    `First: ${schedule.first_feed}, ` +
-                    `Second: ${schedule.second_feed}, ` +
+                    `First: ${schedule.firstfeed}, ` +
+                    `Second: ${schedule.secondfeed}, ` +
                     `Duration: ${schedule.duration || 0} s`;
             } else {
                 text.textContent = 'Not set';
