@@ -10,19 +10,18 @@ from flask import (
 )
 from flask_cors import CORS
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth
 from functools import wraps
 from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime, timedelta
 import os
 import io
-import json
 from google.api_core.exceptions import ResourceExhausted
 
 # =========================
 # CONFIG / FLAGS
 # =========================
-FIRESTORE_LOGIN_DISABLED = False  # temporary hardcoded flag to bypass login on quota issues
+FIRESTORE_LOGIN_DISABLED = False  # keep in case you ever want to block login manually
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
@@ -98,54 +97,46 @@ def home():
 
 
 # =========================
-# AUTH ROUTES
+# AUTH ROUTES (Firebase Auth)
 # =========================
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET"])
 def login():
-    # optional global flag to disable login when Firestore quota is dead
+    # optional global flag if you want to disable login completely
     if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
         return render_template(
             "login.html",
-            error="Login temporarily disabled. Firestore quota exceeded. Please try again later.",
+            error="Login temporarily disabled. Please try again later.",
         )
 
-    if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
-
-        if not email or not password:
-            return render_template("login.html", error="Please enter email and password")
-
-        if db is None:
-            return render_template("login.html", error="Firestore not initialized on server")
-
-        try:
-            users_q = (
-                db.collection("users")
-                .where("email", "==", email)
-                .limit(1)
-                .stream()
-            )
-            user_doc = next(users_q, None)
-        except ResourceExhausted:
-            return render_template(
-                "login.html", error="Database quota exceeded. Please try again later."
-            )
-        except Exception as e:
-            return render_template("login.html", error=f"Firestore error: {e}")
-
-        if not user_doc:
-            return render_template("login.html", error="Invalid email or password")
-
-        data = user_doc.to_dict() or {}
-        if data.get("password") != password:
-            return render_template("login.html", error="Invalid email or password")
-
-        session["user"] = email
-        session["role"] = data.get("role", "worker")
+    if "user" in session:
         return redirect(url_for("dashboard"))
-
     return render_template("login.html")
+
+
+@app.route("/session-login", methods=["POST"])
+def session_login():
+    """
+    Called by frontend JS after Firebase Auth signInWithEmailAndPassword.
+    Expects JSON: { "id_token": "<Firebase ID token>" }
+    """
+    try:
+        data = request.get_json() or {}
+        id_token = data.get("id_token")
+        if not id_token:
+            return jsonify({"status": "error", "message": "Missing token"}), 400
+
+        decoded = auth.verify_id_token(id_token)
+        email = decoded.get("email")
+        if not email:
+            return jsonify({"status": "error", "message": "No email in token"}), 400
+
+        # store authenticated user in session
+        session["user"] = email
+        # if you later store roles in Firestore, you can look them up here
+        session["role"] = "worker"
+        return redirect(url_for("dashboard"))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 401
 
 
 @app.route("/logout")
@@ -154,122 +145,8 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    if request.method == "POST":
-        email = request.form.get("email")
-        password = request.form.get("password")
-
-        if not email or not password:
-            return render_template("register.html", error="Please fill all fields")
-
-        if db is None:
-            return render_template(
-                "register.html", error="Firestore not initialized on server"
-            )
-
-        try:
-            existing_q = (
-                db.collection("users")
-                .where("email", "==", email)
-                .limit(1)
-                .stream()
-            )
-            existing_doc = next(existing_q, None)
-            if existing_doc:
-                return render_template("register.html", error="Email already exists")
-
-            db.collection("users").add(
-                {"email": email, "password": password, "role": "worker"}
-            )
-        except ResourceExhausted:
-            return render_template(
-                "register.html", error="Database quota exceeded. Please try again later."
-            )
-        except Exception as e:
-            return render_template("register.html", error=f"Firestore error: {e}")
-
-        return redirect(url_for("login"))
-
-    return render_template("register.html")
-
-
-@app.route("/resetpassword", methods=["GET", "POST"])
-def resetpassword():
-    if request.method == "POST":
-        email = request.form.get("email")
-        if not email:
-            return render_template("reset.html", error="Please enter your email")
-
-        if db is None:
-            return render_template(
-                "reset.html", error="Firestore not initialized on server"
-            )
-
-        try:
-            users_q = (
-                db.collection("users")
-                .where("email", "==", email)
-                .limit(1)
-                .stream()
-            )
-            user_doc = next(users_q, None)
-        except ResourceExhausted:
-            return render_template(
-                "reset.html", error="Database quota exceeded. Please try again later."
-            )
-        except Exception as e:
-            return render_template("reset.html", error=f"Firestore error: {e}")
-
-        if not user_doc:
-            return render_template("reset.html", error="Email not found")
-
-        token = serializer.dumps(email, salt="password-reset")
-        reset_link = url_for("changepassword", token=token, _external=True)
-        return render_template("reset.html", success=True, resetlink=reset_link)
-
-    return render_template("reset.html")
-
-
-@app.route("/changepassword/<token>", methods=["GET", "POST"])
-def changepassword(token):
-    try:
-        email = serializer.loads(token, salt="password-reset", max_age=600)
-    except Exception:
-        return "Invalid or expired token"
-
-    if request.method == "POST":
-        new_password = request.form.get("password")
-        if not new_password:
-            return render_template("change.html", error="Please enter a new password")
-
-        if db is None:
-            return render_template(
-                "change.html", error="Firestore not initialized on server"
-            )
-
-        try:
-            users_q = (
-                db.collection("users")
-                .where("email", "==", email)
-                .limit(1)
-                .stream()
-            )
-            user_doc = next(users_q, None)
-        except ResourceExhausted:
-            return render_template(
-                "change.html", error="Database quota exceeded. Please try again later."
-            )
-        except Exception as e:
-            return render_template("change.html", error=f"Firestore error: {e}")
-
-        if not user_doc:
-            return "User not found"
-
-        user_doc.reference.update({"password": new_password})
-        return redirect(url_for("login"))
-
-    return render_template("change.html")
+# (Optional) you can keep register/reset routes if you want to manage Firestore users,
+# but if you fully switch to Firebase Auth signup, you may not need these anymore.
 
 
 # =========================
