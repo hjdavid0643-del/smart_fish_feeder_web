@@ -961,6 +961,83 @@ def apilatestreadings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# === INSERTED: DEVICE CONTROL API FOR ESP32_002 ===
+@app.route("/api/device_control", methods=["GET"])
+def api_device_control():
+    """
+    Control API for ESP32_002 water pump board.
+    Returns simple on/off states for pump, fill valve, drain valve.
+    For now, everything is OFF by default.
+    """
+    return jsonify(
+        {
+            "pump_status": "off",          # "on" or "off"
+            "fill_valve_status": "off",    # "on" or "off"
+            "drain_valve_status": "off",   # "on" or "off"
+        }
+    ), 200
+# === END INSERT ===
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/apilatestreadings", methods=["GET"])
+def apilatestreadings():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        readings_cursor = readings_ref.stream()
+
+        data = []
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            turb = normalize_turbidity(docdata.get("turbidity"))
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": turb,
+                    "createdAt": created_str,
+                }
+            )
+
+        data = list(reversed(data))
+        labels = [r["createdAt"] for r in data]
+        temp = [r["temperature"] for r in data]
+        ph = [r["ph"] for r in data]
+        ammonia = [r["ammonia"] for r in data]
+        turbidity = [r["turbidity"] for r in data]
+
+        return jsonify(
+            {
+                "labels": labels,
+                "temp": temp,
+                "ph": ph,
+                "ammonia": ammonia,
+                "turbidity": turbidity,
+            }
+        ), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/historical", methods=["GET"])
 def historical():
     if db is None:
