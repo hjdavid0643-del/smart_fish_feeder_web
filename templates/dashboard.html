@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>Smart Fish Feeder Login</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- keep your existing CSS link(s) here if you have them -->
 </head>
 <body>
   <h1>Smart Fish Feeder Login</h1>
@@ -19,43 +20,60 @@
   <!-- Firebase JS SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
   <script>
-    // TODO: put YOUR Firebase config here
+    // 1) Replace these with your real Firebase web config values
     const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-      projectId: "YOUR_PROJECT_ID",
+      apiKey: "YOUR_REAL_API_KEY",
+      authDomain: "your-project-id.firebaseapp.com",
+      projectId: "your-project-id",
     };
+
+    // 2) Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
 
-    document.getElementById("loginButton").addEventListener("click", function () {
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+    // 3) Wire up the login button after DOM is ready
+    document.addEventListener("DOMContentLoaded", function () {
+      const loginButton = document.getElementById("loginButton");
+      const emailInput = document.getElementById("email");
+      const passwordInput = document.getElementById("password");
       const errorMsg = document.getElementById("errorMsg");
-      errorMsg.textContent = "";
 
-      auth.signInWithEmailAndPassword(email, password)
-        .then(userCredential => userCredential.user.getIdToken())
-        .then(idToken => {
-          return fetch("/session-login", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({id_token: idToken})
-          });
-        })
-        .then(res => {
-          if (res.redirected) {
-            window.location.href = res.url;   // should go to /dashboard
-          } else {
-            return res.json().then(d => {
-              errorMsg.textContent = d.message || "Login failed";
+      loginButton.addEventListener("click", function () {
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+
+        errorMsg.textContent = "";
+
+        if (!email || !password) {
+          errorMsg.textContent = "Please enter email and password.";
+          return;
+        }
+
+        auth.signInWithEmailAndPassword(email, password)
+          .then(userCredential => userCredential.user.getIdToken())
+          .then(idToken => {
+            return fetch("/session-login", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ id_token: idToken })
             });
-          }
-        })
-        .catch(err => {
-          errorMsg.textContent = err.message;
-        });
+          })
+          .then(res => {
+            if (res.redirected) {
+              // Flask session set, go to dashboard
+              window.location.href = res.url;
+            } else {
+              return res.json().then(d => {
+                errorMsg.textContent = d.message || "Login failed.";
+              });
+            }
+          })
+          .catch(err => {
+            errorMsg.textContent = err.message;
+          });
+      });
     });
   </script>
 </body>
