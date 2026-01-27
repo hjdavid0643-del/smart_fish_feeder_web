@@ -102,9 +102,12 @@ def home():
 # =========================
 # AUTH ROUTES (Firebase Auth)
 # =========================
-@app.route("/login", methods=["GET"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    # optional global flag if you want to disable login completely
+    """
+    Accept both GET and POST so any accidental POST /login
+    from old forms does not cause 405; we always just render the page.
+    """
     if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
         return render_template(
             "login.html",
@@ -556,7 +559,6 @@ def exportpdf():
                 )
         else:
             tabledata.append(["No data in last 24 hours", "", "", "", ""])
-
 
         table = Table(tabledata, repeatRows=1)
         table.setStyle(
