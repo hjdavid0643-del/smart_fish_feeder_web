@@ -1,38 +1,66 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import (
+    Flask, render_template, request, redirect, url_for, session, 
+    jsonify, send_file, Response
+)
 from flask_cors import CORS
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import io
-from collections import deque
+import json
+from collections import deque, defaultdict
+import threading
+import time
+
+# ReportLab for PDF (install: pip install reportlab)
+try:
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 # =========================
 # CONFIGURATION
 # =========================
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "fishfeeder-secret-2026-v3")
+app.secret_key = os.environ.get("SECRET_KEY", "fishfeeder-secret-2026-v4")
 CORS(app)
 
 # =========================
-# MEMORY STORAGE (No Firebase - Pure Local)
+# MEMORY STORAGE (Primary - No Firebase Required)
 # =========================
-sensor_data = deque(maxlen=1000)  # Last 1000 readings
+sensor_data = deque(maxlen=2000)  # Last 2000 readings
 device_status = {
-    "ESP32001": {
-        "feederstatus": "off", 
-        "feederspeed": 0, 
-        "limit_switch": "OK",
-        "timestamp": datetime.now().isoformat()
-    }
+    "ESP32001": {"feederstatus": "off", "feederspeed": 0, "limit_switch": "OK"},
+    "ESP32002": {"motorstatus": "off", "motorspeed": 0, "distance": 0}
 }
-
-# User credentials
-VALID_USERS = {
-    "hjdavid0643@iskwela.psau.edu.ph": "0123456789"
-}
+feeding_schedule = {"firstfeed": "09:00", "secondfeed": "16:00", "duration": 5, "enabled": False}
 
 # =========================
-# DECORATORS & HELPERS
+# FIREBASE (Optional Fallback)
+# =========================
+FIRESTORE_DB = None
+try:
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+    def init_firebase():
+        key_path = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
+        if os.path.exists(key_path) and not firebase_admin._apps:
+            cred = credentials.Certificate(key_path)
+            firebase_admin.initialize_app(cred)
+            return firestore.client()
+        return None
+    FIRESTORE_DB = init_firebase()
+except:
+    FIRESTORE_DB = None
+    print("⚠️ Firebase unavailable - using memory storage only")
+
+# =========================
+# DECORATORS
 # =========================
 def login_required(f):
     @wraps(f)
@@ -42,8 +70,18 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def api_login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# =========================
+# UTILITY FUNCTIONS
+# =========================
 def normalize_turbidity(value):
-    """Safe turbidity normalization (0-3000 NTU)"""
     try:
         v = float(value)
         return max(0.0, min(3000.0, v))
@@ -51,41 +89,62 @@ def normalize_turbidity(value):
         return None
 
 def to_float_or_none(value):
-    """Convert to float or return None"""
     try:
         return float(value)
     except:
         return None
 
+def save_to_firestore(collection, document_id, data):
+    """Optional Firestore backup"""
+    if FIRESTORE_DB:
+        try:
+            FIRESTORE_DB.collection(collection).document(document_id).set(data, merge=True)
+        except:
+            pass  # Silently fail
+
 # =========================
-# ESP32 PUBLIC API (NO AUTH - ESP32 Direct Access)
+# AUTHENTICATION
+# =========================
+VALID_USERS = {"hjdavid0643@iskwela.psau.edu.ph": "0123456789"}
+
+@app.route("/")
+def home():
+    return redirect(url_for("login"))
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        if VALID_USERS.get(email) == password:
+            session["user"] = email
+            session["role"] = "admin"
+            return redirect(url_for("dashboard"))
+        return render_template("login.html", error="❌ Invalid credentials")
+    return render_template("login.html")
+
+@app.route("/logout")
+@login_required
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+# =========================
+# ESP32 PUBLIC API (No Auth Required)
 # =========================
 @app.route("/ping", methods=["GET"])
 def ping():
-    """Health check for ESP32"""
-    return jsonify({"status": "alive", "server": "FishFeeder-v3.1"}), 200
-
-@app.route("/getfeedingstatus", methods=["GET"])
-def getfeedingstatus():
-    """ESP32 polls this every 2 seconds for feeder commands"""
-    global device_status
-    status = device_status.get("ESP32001", {})
-    return jsonify({
-        "feederstatus": status.get("feederstatus", "off"),
-        "feederspeed": status.get("feederspeed", 0)
-    }), 200
+    return jsonify({"status": "alive", "version": "v4.0"}), 200
 
 @app.route("/addreading", methods=["POST"])
 def addreading():
-    """ESP32 POSTs sensor data every 10 seconds"""
+    """ESP32 posts sensor data here every 10 seconds"""
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON data"}), 400
+        data = request.get_json() or {}
+        deviceid = data.get("deviceid", "ESP32001")
         
-        # Parse and validate sensor data
         reading = {
-            "deviceid": data.get("deviceid", "ESP32001"),
+            "deviceid": deviceid,
             "timestamp": datetime.now().isoformat(),
             "temperature": to_float_or_none(data.get("temperature")),
             "ph": to_float_or_none(data.get("ph")),
@@ -97,80 +156,46 @@ def addreading():
             "servo_angle": data.get("servo_angle", 90)
         }
         
-        # Store in memory
         sensor_data.append(reading)
+        save_to_firestore("readings", f"{deviceid}_{int(time.time())}", reading)
         
-        # Log to console
-        print(f"🐟 ESP32[{reading['deviceid']}]: NH3={reading['ammonia']:.2f}ppm | "
-              f"Turb={reading['turbidity']:.0f}NTU | Feeder={reading['feeder_status']} | "
-              f"Hopper={reading['limit_switch']}")
-        
-        return jsonify({"status": "success", "message": "Data stored"}), 200
-        
+        print(f"🐟 [{deviceid}] NH3={reading['ammonia']:.2f} Turb={reading['turbidity']:.0f}")
+        return jsonify({"status": "success"}), 200
     except Exception as e:
-        print(f"❌ addreading ERROR: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# =========================
-# AUTHENTICATION ROUTES
-# =========================
-@app.route("/")
-def home():
-    return redirect(url_for("login"))
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        
-        if VALID_USERS.get(email) == password:
-            session["user"] = email
-            session["role"] = "admin"
-            return redirect(url_for("dashboard"))
-        else:
-            return render_template("login.html", error="❌ Invalid email or password")
-    
-    return render_template("login.html")
-
-@app.route("/logout")
-@login_required
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
+@app.route("/getfeedingstatus", methods=["GET"])
+def getfeedingstatus():
+    """ESP32 polls every 2 seconds"""
+    status = device_status.get("ESP32001", {})
+    return jsonify({
+        "feederstatus": status.get("feederstatus", "off"),
+        "feederspeed": status.get("feederspeed", 0)
+    })
 
 # =========================
-# MAIN DASHBOARD
+# DASHBOARD (Main Page)
 # =========================
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    """Main dashboard with live data and charts"""
-    # Latest readings
     readings = list(sensor_data)[-10:]
     
     # Water quality analysis
     summary = "✅ All systems normal"
-    alertcolor = "#2e7d32"  # Green
-    
+    alertcolor = "#2e7d32"
     if readings:
         latest = readings[-1]
-        turbidity = latest.get("turbidity", 0)
         ammonia = latest.get("ammonia", 0)
-        
+        turbidity = latest.get("turbidity", 0)
         if ammonia > 2.0 or turbidity > 100:
             summary = "🚨 WATER QUALITY ALERT!"
-            alertcolor = "#e53935"  # Red
-        elif turbidity > 50 or ammonia > 1.0:
-            summary = "⚠️ Check water parameters"
-            alertcolor = "#ff7043"  # Orange
+            alertcolor = "#e53935"
+        elif turbidity > 50:
+            summary = "⚠️ Check water clarity"
+            alertcolor = "#ff7043"
     
-    # Feeder status
-    esp_status = device_status.get("ESP32001", {})
-    feederalert = f"Feeder: {esp_status.get('feederstatus', 'OFF').upper()}"
-    feederalertcolor = "#28a745" if esp_status.get('feederstatus') == "on" else "#dc3545"
-    
-    # Chart data (last 20 readings)
+    # Chart data
     chart_data = list(sensor_data)[-20:]
     timelabels = [r["timestamp"][11:16] for r in chart_data]
     tempvalues = [r.get("temperature", 0) for r in chart_data]
@@ -182,100 +207,97 @@ def dashboard():
                          readings=readings,
                          summary=summary,
                          alertcolor=alertcolor,
-                         feederalert=feederalert,
-                         feederalertcolor=feederalertcolor,
                          timelabels=timelabels,
                          tempvalues=tempvalues,
                          phvalues=phvalues,
                          ammoniavalues=ammoniavalues,
-                         turbidityvalues=turbidityvalues,
-                         total_readings=len(sensor_data))
+                         turbidityvalues=turbidityvalues)
 
 # =========================
-# FEEDER CONTROL PAGE
+# API ROUTES (Dashboard JavaScript)
 # =========================
-@app.route("/controlfeeding", methods=["GET", "POST"])
+@app.route("/apilatestreadings")
 @login_required
-def controlfeeding():
-    """Dedicated feeder control page"""
-    if request.method == "POST":
-        action = request.form.get("action")
-        speed = int(request.form.get("speed", 50))
-        
-        # Update feeder status (ESP32 will poll this)
-        global device_status
-        device_status["ESP32001"].update({
-            "feederstatus": "on" if action == "on" else "off",
-            "feederspeed": speed if action == "on" else 0,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        print(f"🎮 FEEDER CONTROL: {action.upper()} {speed}% → ESP32001")
-        return redirect(url_for("controlfeeding"))
+def apilatestreadings():
+    data = list(sensor_data)[-50:]
+    labels = [r["timestamp"][11:16] for r in data]
+    temp = [r.get("temperature", 0) for r in data]
+    ph = [r.get("ph", 0) for r in data]
+    ammonia = [r.get("ammonia", 0) for r in data]
+    turbidity = [r.get("turbidity", 0) for r in data]
+    return jsonify({"labels": labels, "temp": temp, "ph": ph, "ammonia": ammonia, "turbidity": turbidity})
+
+@app.route("/historical")
+@login_required
+def historical():
+    data = list(sensor_data)[-100:]
+    return jsonify({"status": "success", "readings": data})
+
+@app.route("/apiultrasonicesp322")
+@login_required
+def apiultrasonicesp322():
+    distances = [r.get("distance", 0) for r in list(sensor_data)[-20:]]
+    return jsonify({"status": "success", "distance": distances})
+
+@app.route("/controlfeeder", methods=["POST"])
+@api_login_required
+def controlfeeder():
+    data = request.get_json() or request.form
+    action = data.get("action")
+    speed = int(data.get("speed", 50))
     
-    readings = list(sensor_data)[-15:]
-    return render_template("control.html", readings=readings)
-
-# =========================
-# MOSFET CONTROL PAGE
-# =========================
-@app.route("/mosfet")
-@login_required
-def mosfet():
-    """MOSFET motor control page"""
-    readings = list(sensor_data)[-20:]
-    return render_template("mosfet.html", readings=readings)
-
-# =========================
-# API ENDPOINTS (Dashboard JavaScript)
-# =========================
-@app.route("/status")
-def status():
-    """Live status for dashboard (public)"""
-    latest = dict(sensor_data)[-1] if sensor_data else None
-    return jsonify({
-        "status": "running",
-        "readings_count": len(sensor_data),
-        "latest": latest,
-        "feeder": device_status.get("ESP32001", {})
-    })
-
-@app.route("/api/latest")
-@login_required
-def api_latest():
-    """Latest readings API for charts/tables"""
-    readings = list(sensor_data)[-50:]
-    return jsonify({
-        "status": "success",
-        "count": len(readings),
-        "latest": readings[-1] if readings else None,
-        "readings": readings
-    })
-
-@app.route("/api/feederstatus")
-@login_required
-def api_feederstatus():
-    """Current feeder status"""
-    return jsonify(device_status.get("ESP32001", {}))
-
-@app.route("/controlfeeding", methods=["POST"])
-@login_required
-def controlfeeding_api():
-    """API version of feeder control"""
-    action = request.json.get("action") if request.is_json else request.form.get("action")
-    speed = int(request.json.get("speed", 50) if request.is_json else request.form.get("speed", 50))
-    
-    global device_status
     device_status["ESP32001"].update({
         "feederstatus": "on" if action == "on" else "off",
-        "feederspeed": speed if action == "on" else 0,
-        "timestamp": datetime.now().isoformat()
+        "feederspeed": speed if action == "on" else 0
     })
+    save_to_firestore("devices", "ESP32001", device_status["ESP32001"])
     
-    return jsonify({
-        "status": "success", 
-        "message": f"Feeder {action} at {speed}%"
+    return jsonify({"status": "success", "message": f"Feeder {action} ({speed}%)"})
+
+@app.route("/getfeedingstatus", methods=["GET"])
+@api_login_required
+def getfeedingstatus_web():
+    status = device_status.get("ESP32001", {})
+    return jsonify({"status": "success", "feederstatus": status.get("feederstatus"), "feederspeed": status.get("feederspeed")})
+
+@app.route("/controlmotor", methods=["POST"])
+@api_login_required
+def controlmotor():
+    data = request.get_json() or request.form
+    action = data.get("action")
+    speed = int(data.get("speed", 50))
+    
+    device_status["ESP32002"].update({
+        "motorstatus": "on" if action == "on" else "off",
+        "motorspeed": speed if action == "on" else 0
     })
+    save_to_firestore("devices", "ESP32002", device_status["ESP32002"])
+    
+    return jsonify({"status": "success", "message": f"Motor {action} ({speed}%)"})
+
+@app.route("/getmotorstatus", methods=["GET"])
+@api_login_required
+def getmotorstatus():
+    status = device_status.get("ESP32002", {})
+    return jsonify({"status": "success", "motorstatus": status.get("motorstatus"), "motorspeed": status.get("motorspeed")})
+
+@app.route("/savefeedingschedule", methods=["POST"])
+@api_login_required
+def savefeedingschedule():
+    data = request.get_json() or request.form
+    global feeding_schedule
+    feeding_schedule.update({
+        "firstfeed": data.get("firstfeed"),
+        "secondfeed": data.get("secondfeed"),
+        "duration": int(data.get("duration", 5)),
+        "enabled": True
+    })
+    return jsonify({"status": "success", "message": "Schedule saved"})
+
+@app.route("/getfeedingscheduleinfo")
+@api_login_required
+def getfeedingscheduleinfo():
+    return jsonify({"status": "success", "schedule": feeding_schedule, "enabled": feeding_schedule["enabled"]})
 
 # =========================
 # PDF EXPORT
@@ -283,88 +305,53 @@ def controlfeeding_api():
 @app.route("/exportpdf")
 @login_required
 def exportpdf():
-    """Generate PDF report of last 24 readings"""
-    try:
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.lib import colors
-        from reportlab.lib.units import inch
-        
-        pdf_buffer = io.BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
-        elements = []
-        styles = getSampleStyleSheet()
-        
-        # Header
-        elements.append(Paragraph("🐟 Smart Fish Feeder - Water Quality Report", styles["Title"]))
-        elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles["Normal"]))
-        elements.append(Spacer(1, 0.3*inch))
-        
-        # Data table (last 24 readings)
-        table_data = [["Time", "Temp (°C)", "pH", "NH₃ (ppm)", "Turbidity (NTU)", "Feeder Status"]]
-        recent_data = list(sensor_data)[-24:]
-        
-        for reading in recent_data:
-            time_str = reading["timestamp"][11:16]
-            table_data.append([
-                time_str,
-                f"{reading.get('temperature', 0):.1f}",
-                f"{reading.get('ph', 0):.1f}",
-                f"{reading.get('ammonia', 0):.2f}",
-                f"{reading.get('turbidity', 0):.0f}",
-                reading.get('feeder_status', 'OFF')
-            ])
-        
-        if not recent_data:
-            table_data.append(["No data available", "", "", "", "", ""])
-        
-        table = Table(table_data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.beige, colors.white])
-        ]))
-        
-        elements.append(Paragraph("📊 Recent Sensor Readings", styles["Heading2"]))
-        elements.append(table)
-        
-        # Feeder status summary
-        feeder = device_status.get("ESP32001", {})
-        elements.append(Spacer(1, 0.2*inch))
-        elements.append(Paragraph(f"🤖 Feeder Status: {feeder.get('feederstatus', 'OFF')} ({feeder.get('feederspeed', 0)}%)", styles["Normal"]))
-        
-        doc.build(elements)
-        pdf_buffer.seek(0)
-        
-        filename = f"fishfeeder_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        return send_file(pdf_buffer, 
-                        as_attachment=True, 
-                        download_name=filename, 
-                        mimetype='application/pdf')
-        
-    except ImportError:
-        return jsonify({"error": "Install reportlab: pip install reportlab"}), 500
-    except Exception as e:
-        return jsonify({"error": f"PDF generation failed: {str(e)}"}), 500
+    if not REPORTLAB_AVAILABLE:
+        return "Install reportlab: pip install reportlab", 500
+    
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    elements.append(Paragraph("🐟 Smart Fish Feeder Report", styles["Title"]))
+    elements.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles["Normal"]))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Recent data table
+    table_data = [["Time", "Temp(°C)", "pH", "NH₃(ppm)", "Turb(NTU)", "Feeder"]]
+    recent = list(sensor_data)[-24:]
+    for r in recent:
+        time_str = r["timestamp"][11:16]
+        table_data.append([
+            time_str,
+            f"{r.get('temperature', 0):.1f}",
+            f"{r.get('ph', 0):.1f}",
+            f"{r.get('ammonia', 0):.2f}",
+            f"{r.get('turbidity', 0):.0f}",
+            r.get('feeder_status', 'OFF')
+        ])
+    
+    table = Table(table_data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2575fc")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 1, colors.black),
+    ]))
+    
+    elements.append(table)
+    doc.build(elements)
+    
+    pdf_buffer.seek(0)
+    return send_file(pdf_buffer, as_attachment=True, download_name=f"fishfeeder_{datetime.now().strftime('%Y%m%d')}.pdf", mimetype='application/pdf')
 
 # =========================
-# MAIN ENTRY POINT
+# START SERVER
 # =========================
 if __name__ == "__main__":
-    print("=" * 60)
-    print("🐟 SMART FISH FEEDER SERVER v3.1 - PRODUCTION READY")
-    print("=" * 60)
-    print("📡 ESP32 ENDPOINTS:")
-    print("   POST /addreading        ← Sensor data (every 10s)")
-    print("   GET  /getfeedingstatus  ← Feeder control (every 2s)")
-    print("   GET  /ping             ← Health check")
-    print("📱 WEB DASHBOARD: http://YOUR_IP:5000/dashboard")
-    print("🔐 LOGIN: hjdavid0643@iskwela.psau.edu.ph / 0123456789")
-    print("=" * 60)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    print("🐟 Smart Fish Feeder Server v4.0 - FULLY COMPATIBLE")
+    print("📡 ESP32: POST /addreading | GET /getfeedingstatus")
+    print("📱 Dashboard: http://0.0.0.0:5000/dashboard")
+    print("🔐 Login: hjdavid0643@iskwela.psau.edu.ph / 0123456789")
+    app.run(host="0.0.0.0", port=5000, debug=True)
