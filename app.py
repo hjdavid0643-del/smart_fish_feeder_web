@@ -15,7 +15,6 @@ from functools import wraps
 from datetime import datetime, timedelta
 import os
 import io
-import traceback
 from google.api_core.exceptions import ResourceExhausted
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -33,24 +32,37 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
+
 # =========================
-# FIREBASE INIT (SAFE)
+# FIREBASE / FIRESTORE INIT
 # =========================
 def init_firebase():
     try:
         FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
+        FIREBASE_KEY_PATH = (
+            "/etc/secrets/"
+            "authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
+        )
         if not firebase_admin._apps:
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
-            firebase_admin.initialize_app(cred)
-        return firestore.client()
+            firebase_app = firebase_admin.initialize_app(cred)
+        else:
+            firebase_app = firebase_admin.get_app()
+        return firestore.client(app=firebase_app)
     except Exception as e:
-        print(f"❌ Firebase offline: {e}")
+        import traceback
+
+        traceback.print_exc()
+        print("Error initializing Firebase:", e)
         return None
+
 
 db = init_firebase()
 
+
+
 # =========================
-# CLEAN HELPERS (NO DUPLICATES)
+# HELPERS
 # =========================
 def login_required(f):
     @wraps(f)
@@ -58,7 +70,9 @@ def login_required(f):
         if "user" not in session:
             return redirect(url_for("login"))
         return f(*args, **kwargs)
+
     return decorated
+
 
 def api_login_required(f):
     @wraps(f)
@@ -66,369 +80,1254 @@ def api_login_required(f):
         if "user" not in session:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
         return f(*args, **kwargs)
+
     return decorated
 
-def safe_float(value, default=0.0):
-    """Bulletproof float conversion"""
-    try:
-        return float(value) if value else default
-    except:
-        return default
 
 def normalize_turbidity(value):
-    """Clamp turbidity 0-3000"""
-    v = safe_float(value)
-    return max(0.0, min(3000.0, v))
-
-# =========================
-# ESP32 BULLETPROOF SENSOR ENDPOINT - HTTP 500 FIXED
-# =========================
-@app.route("/addreading", methods=["POST", "GET"])
-def addreading():
-    """ESP32001 SENSOR DATA - ALWAYS HTTP 200"""
-    print("🐟 ESP32 DATA RECEIVED")
-    
+    """Convert raw turbidity to a sane float or None."""
     try:
-        # Handle ALL ESP32 formats (query params, form, JSON)
-        turbidity = safe_float(request.args.get("turbidity") or request.form.get("turbidity"))
-        ammonia = safe_float(request.args.get("ammonia") or request.form.get("ammonia"))
-        temperature = safe_float(request.args.get("temperature") or request.form.get("temperature"))
-        ph = safe_float(request.args.get("ph") or request.form.get("ph"))
-        deviceid = request.args.get("deviceid", request.form.get("deviceid", "ESP32001"))
-        limit_switch = request.args.get("limit_switch", request.form.get("limit_switch", "OK"))
-        
-        print(f"✅ Turb={turbidity}NTU | NH3={ammonia:.1f}ppm | Limit={limit_switch}")
-        
-        # Non-blocking Firestore save
-        if db:
-            try:
-                doc_ref = (db.collection("devices")
-                          .document(deviceid)
-                          .collection("readings")
-                          .document())
-                doc_ref.set({
-                    "deviceid": deviceid,
-                    "turbidity": normalize_turbidity(turbidity),
-                    "ammonia": ammonia,
-                    "temperature": temperature,
-                    "ph": ph,
-                    "limit_switch": limit_switch,
-                    "createdAt": firestore.SERVER_TIMESTAMP
-                })
-                print("🔥 FIRESTORE SAVED")
-            except Exception as fs_error:
-                print(f"⚠️ Firestore skipped: {fs_error}")
-        
-        return jsonify({"status": "OK", "message": "saved"}), 200
-        
-    except Exception as e:
-        print(f"💥 addreading error: {e}")
-        traceback.print_exc()
-        return jsonify({"status": "OK"}), 200  # ESP32 ALWAYS LIVES
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        v = 0.0
+    if v > 3000:
+        v = 3000.0
+    return v
+
+
+def to_float_or_none(value):
+    """Convert to float, return None if invalid."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def normalize_turbidity(value):
+    ...
+    return v
+
+
+def to_float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 
 @app.route("/update_temp_ph", methods=["POST"])
 def update_temp_ph():
-    """Legacy temp/ph endpoint"""
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
     try:
-        temperature = safe_float(request.get_json().get("temperature"))
-        ph = safe_float(request.get_json().get("ph"))
-        
-        if db:
-            db.collection("devices").document("ESP32_001").set({
+        data = request.get_json() or {}
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+
+        if temperature is None or ph is None:
+            return jsonify(
+                {"status": "error", "message": "temperature and ph required"}
+            ), 400
+
+        db.collection("devices").document("ESP32_001").set(
+            {
                 "temperature": temperature,
                 "ph": ph,
-                "updatedAt": firestore.SERVER_TIMESTAMP
-            }, merge=True)
-        
+                "updatedAt": datetime.utcnow(),
+            },
+            merge=True,
+        )
         return jsonify({"status": "success"}), 200
-    except:
-        return jsonify({"status": "OK"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # =========================
 # BASIC ROUTES
 # =========================
 @app.route("/")
 def home():
+    
+   return redirect(url_for("login"))
+
     return redirect(url_for("login"))
 
 # =========================
-# AUTH ROUTES
+# AUTH ROUTES (simple session auth)
 # =========================
+# Hard‑coded test user; replace with real user storage later.
 VALID_USERS = {
     "hjdavid0643@iskwela.psau.edu.ph": "0123456789",
 }
 
+
+
+# =========================
+# AUTH ROUTES (simple session auth)
+# =========================
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if FIRESTORE_LOGIN_DISABLED:
-        return render_template("login.html", error="Login disabled")
-    
+    if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
+    if FIRESTORE_LOGIN_DISABLED or os.environ.get(
+        "FIRESTORE_LOGIN_DISABLED", "0"
+    ) == "1":
+        return render_template(
+            "login.html",
+            error="Login temporarily disabled. Please try again later.",
+        )
+
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        
-        if VALID_USERS.get(email) == password:
+
+        if not email or not password:
+            return render_template("login.html", error="Email and password are required.")
+            return render_template(
+                "login.html", error="Email and password are required."
+            )
+
+        expected_password = VALID_USERS.get(email)
+        if expected_password and expected_password == password:
             session["user"] = email
             session["role"] = "worker"
             return redirect(url_for("dashboard"))
-        return render_template("login.html", error="Invalid credentials")
-    
+
+        return render_template("login.html", error="Invalid email or password.")
+
     if "user" in session:
         return redirect(url_for("dashboard"))
     return render_template("login.html")
+
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
 @app.route("/register")
 def register():
-    return "Registration not implemented"
+    return "Registration is managed separately (not implemented in backend)."
 
 # =========================
-# DASHBOARD - SHOWS YOUR 8.0ppm DATA
+# UPDATE TEMP/PH (optional small API)
+# =========================
+@app.route("/update_temp_ph", methods=["POST"])
+def update_temp_ph():
+    if db is None:
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        data = request.get_json() or {}
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+
+        if temperature is None or ph is None:
+            return (
+                jsonify(
+                    {"status": "error", "message": "temperature and ph required"}
+                ),
+                400,
+            )
+
+        db.collection("devices").document("ESP32_001").set(
+            {
+                "temperature": temperature,
+                "ph": ph,
+                "updatedAt": datetime.utcnow(),
+            },
+            merge=True,
+        )
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# =========================
+# DASHBOARD
 # =========================
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    if not db:
-        return render_template("dashboard.html", readings=[], 
-                             summary="No DB", alertcolor="gray",
-                             timelabels=[], tempvalues=[], phvalues=[],
-                             ammoniavalues=[], turbidityvalues=[],
-                             feederalert="N/A", feederalertcolor="gray")
+    if db is None:
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Firestore not initialized on server",
+            alertcolor="gray",
+            timelabels=[],
+            tempvalues=[],
+            phvalues=[],
+            ammoniavalues=[],
+            turbidityvalues=[],
+            feederalert="Feeder status unavailable",
+            feederalertcolor="gray",
+            lowfeedalert=None,
+            lowfeedcolor="#ff7043",
+        )
 
     try:
-        readings_ref = (db.collection("devices")
-                       .document("ESP32001")
-                       .collection("readings")
-                       .order_by("createdAt", direction=firestore.Query.DESCENDING)
-                       .limit(50))
-        readings = list(readings_ref.stream())
-    except:
-        readings = []
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        readings_cursor = readings_ref.stream()
+    except ResourceExhausted:
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Database quota exceeded. Please try again later.",
+            alertcolor="gray",
+            timelabels=[],
+            tempvalues=[],
+            phvalues=[],
+            ammoniavalues=[],
+            turbidityvalues=[],
+            feederalert="Feeder status unavailable",
+            feederalertcolor="gray",
+            lowfeedalert=None,
+            lowfeedcolor="#ff7043",
+        )
+    except Exception:
+        return render_template(
+            "dashboard.html",
+            readings=[],
+            summary="Error loading data.",
+            alertcolor="gray",
+            timelabels=[],
+            tempvalues=[],
+            phvalues=[],
+            ammoniavalues=[],
+            turbidityvalues=[],
+            feederalert="Feeder status unavailable",
+            feederalertcolor="gray",
+            lowfeedalert=None,
+            lowfeedcolor="#ff7043",
+        )
 
     data = []
-    for doc in readings:
-        doc_data = doc.to_dict() or {}
-        created = doc_data.get("createdAt", "N/A")
-        if hasattr(created, 'strftime'):
+    for r in readings_cursor:
+        docdata = r.to_dict() or {}
+        created = docdata.get("createdAt")
+        if isinstance(created, datetime):
             created_str = created.strftime("%Y-%m-%d %H:%M:%S")
         else:
-            created_str = str(created)
-        
-        data.append({
-            "temperature": safe_float(doc_data.get("temperature")),
-            "ph": safe_float(doc_data.get("ph")),
-            "ammonia": safe_float(doc_data.get("ammonia")),
-            "turbidity": normalize_turbidity(doc_data.get("turbidity")),
-            "createdAt": created_str,
-        })
-    
-    # Reverse for chronological order, take latest 10
-    data = data[:10][::-1]
+            created_str = created
+        turb = normalize_turbidity(docdata.get("turbidity"))
+        data.append(
+            {
+                "temperature": docdata.get("temperature"),
+                "ph": docdata.get("ph"),
+                "ammonia": docdata.get("ammonia"),
+                "turbidity": turb,
+                "createdAt": created_str,
+            }
+        )
 
-    # Water quality alerts
+    data = list(reversed(data))
+
     summary = "All systems normal."
     alertcolor = "green"
     if data:
-        latest = data[-1]
-        if latest["turbidity"] > 100:
-            summary = "☠️ EXTREME DANGER - Water too cloudy!"
-            alertcolor = "red"
-        elif latest["turbidity"] > 50:
-            summary = "⚠️ WARNING - Water cloudy"
-            alertcolor = "orange"
-        elif latest["ammonia"] > 2.0:
-            summary = f"☠️ EXTREME NH3={latest['ammonia']:.1f}ppm"
-            alertcolor = "red"
+        last = data[-1]
+        last_turbidity = last.get("turbidity")
+        if last_turbidity is not None:
+            if last_turbidity > 100:
+                summary = "Water is too cloudy! Danger"
+                alertcolor = "gold"
+            elif last_turbidity > 50:
+                summary = "Water is getting cloudy."
+                alertcolor = "orange"
 
-    # Feeder status
-    feederalert = "Feeder OFF"
+    feederalert = "Feeder is currently OFF"
     feederalertcolor = "lightcoral"
     try:
-        device_doc = db.collection("devices").document("ESP32001").get()
-        if device_doc.exists:
-            device_data = device_doc.to_dict()
-            status = device_data.get("feederstatus", "off")
-            speed = safe_float(device_data.get("feederspeed", 0))
-            if status == "on" and speed > 0:
-                feederalert = f"🌀 Feeding {speed}%"
+        devicedoc = db.collection("devices").document("ESP32001").get()
+        if devicedoc.exists:
+            d = devicedoc.to_dict() or {}
+            feederstatus = d.get("feederstatus", "off")
+            feederspeed = d.get("feederspeed", 0)
+            if feederstatus == "on" and feederspeed and feederspeed > 0:
+                feederalert = f"Feeding in progress at {feederspeed}% speed"
                 feederalertcolor = "limegreen"
-    except:
+    except Exception:
+        feederalert = "Feeder status unavailable"
+        feederalertcolor = "gray"
+
+    lowfeedalert = None
+    lowfeedcolor = "#ff7043"
+    try:
+        hopperdoc = db.collection("devices").document("ESP32002").get()
+        if hopperdoc.exists:
+            hdata = hopperdoc.to_dict() or {}
+            levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
+            levelpercent = hdata.get("feedlevelpercent") or hdata.get(
+                "waterlevelpercent"
+            )
+            if levelpercent is not None and levelpercent < 20:
+                lowfeedalert = (
+                    f"Low feed level ({levelpercent:.1f}%). Please refill the hopper."
+                )
+    except Exception:
         pass
+
+    timelabels = [r["createdAt"] for r in data]
+    tempvalues = [r["temperature"] for r in data]
+    phvalues = [r["ph"] for r in data]
+    ammoniavalues = [r["ammonia"] for r in data]
+    turbidityvalues = [r["turbidity"] for r in data]
+
+    latest10 = data[-10:]
 
     return render_template(
         "dashboard.html",
-        readings=data,
+        readings=latest10,
         summary=summary,
         alertcolor=alertcolor,
-        timelabels=[r["createdAt"] for r in data],
-        tempvalues=[r["temperature"] for r in data],
-        phvalues=[r["ph"] for r in data],
-        ammoniavalues=[r["ammonia"] for r in data],
-        turbidityvalues=[r["turbidity"] for r in data],
+        timelabels=timelabels,
+        tempvalues=tempvalues,
+        phvalues=phvalues,
+        ammoniavalues=ammoniavalues,
+        turbidityvalues=turbidityvalues,
         feederalert=feederalert,
-        feederalertcolor=feederalertcolor
+        feederalertcolor=feederalertcolor,
+        lowfeedalert=lowfeedalert,
+        lowfeedcolor=lowfeedcolor,
     )
 
+
 # =========================
-# CONTROL PAGES
+# MOSFET PAGE
+# =========================
+@app.route("/mosfet")
+@login_required
+def mosfet():
+    if db is None:
+        return render_template("mosfet.html", readings=[])
+
+    readings_ref = (
+        db.collection("devices")
+        .document("ESP32001")
+        .collection("readings")
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)
+        .limit(50)
+    )
+    readings_cursor = readings_ref.stream()
+
+    data = []
+    for r in readings_cursor:
+        docdata = r.to_dict() or {}
+        created = docdata.get("createdAt")
+        if isinstance(created, datetime):
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            created_str = created
+        turb = normalize_turbidity(docdata.get("turbidity"))
+        data.append(
+            {
+                "temperature": docdata.get("temperature"),
+                "ph": docdata.get("ph"),
+                "ammonia": docdata.get("ammonia"),
+                "turbidity": turb,
+                "createdAt": created_str,
+            }
+        )
+
+    return render_template("mosfet.html", readings=data)
+
+
+# =========================
+# FEEDING CONTROL PAGE
 # =========================
 @app.route("/controlfeeding")
 @login_required
 def controlfeedingpage():
-    return render_template("control.html", readings=[], summary="Control Panel")
+    if db is None:
+        return render_template(
+            "control.html",
+            error="Firestore not initialized on server",
+            readings=[],
+            allreadings=[],
+            summary="Error loading data",
+            chartlabels=[],
+            charttemp=[],
+            chartph=[],
+            chartammonia=[],
+            chartturbidity=[],
+        )
 
-@app.route("/mosfet")
-@login_required
-def mosfet():
-    return render_template("mosfet.html", readings=[])
-
-# =========================
-# FEEDER MOTOR CONTROL
-# =========================
-@app.route("/controlfeeder", methods=["POST"])
-@api_login_required
-def controlfeeder():
     try:
-        data = request.get_json() or dict(request.form)
-        action = data.get("action", "off")
-        speed = safe_float(data.get("speed"), 0)
-        
-        status = "on" if speed > 0 else "off"
-        if db:
-            db.collection("devices").document("ESP32001").set({
-                "feederspeed": int(speed),
-                "feederstatus": status,
-                "updatedAt": firestore.SERVER_TIMESTAMP
-            }, merge=True)
-        
-        return jsonify({"status": "success", "action": action, "speed": speed}), 200
-    except:
-        return jsonify({"status": "ok"}), 200
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(10)
+        )
+        readings = []
+        for docsnap in readings_ref.stream():
+            d = docsnap.to_dict() or {}
+            created = d.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            readings.append(
+                {
+                    "temperature": d.get("temperature"),
+                    "ph": d.get("ph"),
+                    "ammonia": d.get("ammonia"),
+                    "turbidity": normalize_turbidity(d.get("turbidity")),
+                    "createdAt": created_str,
+                }
+            )
 
-@app.route("/getfeedingstatus", methods=["GET"])
-@api_login_required
-def getfeedingstatus():
-    try:
-        if db:
-            doc = db.collection("devices").document("ESP32001").get()
-            data = doc.to_dict() or {}
-            return jsonify({
-                "status": "success",
-                "feederspeed": safe_float(data.get("feederspeed")),
-                "feederstatus": data.get("feederstatus", "off")
-            })
-        return jsonify({"status": "success", "feederspeed": 0, "feederstatus": "off"})
-    except:
-        return jsonify({"status": "success", "feederspeed": 0, "feederstatus": "off"})
+        allreadings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        allreadings = []
+        for docsnap in allreadings_ref.stream():
+            d = docsnap.to_dict() or {}
+            created = d.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            allreadings.append(
+                {
+                    "temperature": d.get("temperature"),
+                    "ph": d.get("ph"),
+                    "ammonia": d.get("ammonia"),
+                    "turbidity": normalize_turbidity(d.get("turbidity")),
+                    "createdAt": created_str,
+                }
+            )
+
+        chartlabels = []
+        charttemp = []
+        chartph = []
+        chartammonia = []
+        chartturbidity = []
+
+        for r in reversed(readings):
+            chartlabels.append(r.get("createdAt", "N/A"))
+            charttemp.append(r.get("temperature", 0))
+            chartph.append(r.get("ph", 0))
+            chartammonia.append(r.get("ammonia", 0))
+            chartturbidity.append(r.get("turbidity", 0))
+
+        summary = "Feeding Motor Control Dashboard"
+
+        return render_template(
+            "control.html",
+            readings=readings,
+            allreadings=allreadings,
+            summary=summary,
+            chartlabels=chartlabels,
+            charttemp=charttemp,
+            chartph=chartph,
+            chartammonia=chartammonia,
+            chartturbidity=chartturbidity,
+        )
+    except Exception as e:
+        return render_template(
+            "control.html",
+            error=str(e),
+            readings=[],
+            allreadings=[],
+            summary="Error loading data",
+            chartlabels=[],
+            charttemp=[],
+            chartph=[],
+            chartammonia=[],
+            chartturbidity=[],
+        )
+
 
 # =========================
-# PDF REPORT
+# PDF EXPORT (LAST 24 HOURS)
 # =========================
 @app.route("/exportpdf")
 @login_required
 def exportpdf():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
     try:
-        if not db:
-            return jsonify({"error": "No database"}), 500
-        
         now = datetime.utcnow()
-        readings_ref = (db.collection("devices")
-                       .document("ESP32001")
-                       .collection("readings")
-                       .order_by("createdAt", direction=firestore.Query.DESCENDING)
-                       .limit(24))
-        
+        twentyfour_hours_ago = now - timedelta(hours=24)
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .where("createdAt", ">=", twentyfour_hours_ago)
+            .order_by("createdAt", direction=firestore.Query.ASCENDING)
+        )
+
+        try:
+            readings_cursor = readings_ref.stream()
+        except ResourceExhausted:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Database quota exceeded while generating PDF. Please try again later.",
+                }
+            ), 503
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Database quota exceeded while generating PDF. "
+                        "Please try again later.",
+                    }
+                ),
+                503,
+            )
+
         data = []
-        for doc in readings_ref.stream():
-            doc_data = doc.to_dict()
-            data.append({
-                "temperature": safe_float(doc_data.get("temperature")),
-                "ph": safe_float(doc_data.get("ph")),
-                "ammonia": safe_float(doc_data.get("ammonia")),
-                "turbidity": normalize_turbidity(doc_data.get("turbidity")),
-                "createdAt": doc_data.get("createdAt", now)
-            })
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": normalize_turbidity(docdata.get("turbidity")),
+                    "createdAt": docdata.get("createdAt"),
+                }
+            )
 
         pdf_buffer = io.BytesIO()
-        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+        docpdf = SimpleDocTemplate(pdf_buffer, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
-        
-        elements.append(Paragraph("🐟 Fish Tank Water Quality Report", styles['Title']))
-        elements.append(Paragraph(f"Generated: {now.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-        elements.append(Spacer(1, 12))
-        
-        table_data = [["Time", "Temp (°C)", "pH", "NH3 (ppm)", "Turb (NTU)"]]
-        for r in data[:20]:
-            time_str = str(r["createdAt"])[:16] if r["createdAt"] else "N/A"
-            table_data.append([
-                time_str,
-                f"{r['temperature']:.1f}",
-                f"{r['ph']:.1f}",
-                f"{r['ammonia']:.1f}",
-                f"{r['turbidity']:.0f}"
-            ])
-        
-        table = Table(table_data)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ]))
-        
+
+        title_style = ParagraphStyle(
+            "CustomTitle",
+            parent=styles["Heading1"],
+            fontSize=20,
+            textColor=colors.HexColor("#1f77b4"),
+            alignment=1,
+            spaceAfter=20,
+        )
+
+        elements.append(Paragraph("Water Quality Monitoring Report", title_style))
+        elements.append(
+            Paragraph(
+                f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S')} (last 24 hours)",
+                styles["Normal"],
+            )
+        )
+        elements.append(Spacer(1, 0.2 * inch))
+
+        tabledata = [["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]]
+        tabledata = [
+            ["Time", "Temperature (°C)", "pH", "Ammonia (ppm)", "Turbidity (NTU)"]
+        ]
+
+        if data:
+            for r in data:
+                createddt = r["createdAt"]
+                if isinstance(createddt, datetime):
+                    createdstr = createddt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    createdstr = str(createddt) if createddt else ""
+                tabledata.append(
+                    [
+                        createdstr,
+                        "" if r["temperature"] is None else f"{r['temperature']:.2f}",
+                        "" if r["ph"] is None else f"{r['ph']:.2f}",
+                        "" if r["ammonia"] is None else f"{r['ammonia']:.2f}",
+                        "" if r["turbidity"] is None else f"{r['turbidity']:.2f}",
+                    ]
+                )
+        else:
+            tabledata.append(["No data in last 24 hours", "", "", "", ""])
+
+        table = Table(tabledata, repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f77b4")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ]
+            )
+        )
+
+        elements.append(Paragraph("Recent Sensor Readings (24 hours)", styles["Heading2"]))
+        elements.append(
+            Paragraph("Recent Sensor Readings (24 hours)", styles["Heading2"])
+        )
         elements.append(table)
-        doc.build(elements)
-        
+
+        docpdf.build(elements)
         pdf_buffer.seek(0)
-        return send_file(pdf_buffer, mimetype="application/pdf",
-                        as_attachment=True, 
-                        download_name=f"fish_report_{now.strftime('%Y%m%d')}.pdf")
-    except:
-        return jsonify({"error": "PDF generation failed"}), 500
+        timestamp = now.strftime("%Y%m%d%H%M%S")
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=f"waterquality24h_{timestamp}.pdf",
+        )
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # =========================
-# HEALTH CHECKS & DEBUG
+# MOTOR / FEEDER CONTROL (ESP32001)
 # =========================
-@app.route("/ping")
-def ping():
-    return jsonify({"status": "ok", "db": db is not None, "timestamp": datetime.now().isoformat()})
+@app.route("/controlmotor", methods=["POST"])
+@api_login_required
+def controlmotor():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
 
+    try:
+        data = request.get_json() or request.form
+        action = data.get("action")
+        speed = data.get("speed", 50)
+
+        if action == "off":
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "motorspeed": 0,
+                    "motorstatus": "off",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
+
+        elif action == "on":
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "motorspeed": int(speed),
+                    "motorstatus": "on",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify(
+                {"status": "success", "message": f"Motor turned ON at {speed}"}
+            ), 200
+
+        elif action == "setspeed":
+            speedvalue = int(speed)
+            if speedvalue < 0 or speedvalue > 100:
+                return jsonify(
+                    {"status": "error", "message": "Speed must be 0-100"}
+                ), 400
+                return (
+                    jsonify({"status": "error", "message": "Speed must be 0-100"}),
+                    400,
+                )
+
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "motorspeed": speedvalue,
+                    "motorstatus": "on" if speedvalue > 0 else "off",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify(
+                {"status": "success", "message": f"Speed set to {speedvalue}"}
+            ), 200
+
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/getmotorstatus", methods=["GET"])
+@api_login_required
+def getmotorstatus():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        devicedoc = db.collection("devices").document("ESP32001").get()
+        if devicedoc.exists:
+            data = devicedoc.to_dict() or {}
+            return jsonify(
+                {
+                    "status": "success",
+                    "motorspeed": data.get("motorspeed", 0),
+                    "motorstatus": data.get("motorstatus", "off"),
+                }
+            ), 200
+        return jsonify({"status": "success", "motorspeed": 0, "motorstatus": "off"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/controlfeeder", methods=["POST"])
+@api_login_required
+def controlfeeder():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        data = request.get_json() or request.form
+        action = data.get("action")
+        speed = data.get("speed", 50)
+
+        if action == "off":
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "feederspeed": 0,
+                    "feederstatus": "off",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify({"status": "success", "message": "Feeder turned OFF"}), 200
+
+        elif action == "on":
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "feederspeed": int(speed),
+                    "feederstatus": "on",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify(
+                {"status": "success", "message": f"Feeder turned ON at {speed}"}
+            ), 200
+
+        elif action == "setspeed":
+            speedvalue = int(speed)
+            if speedvalue < 0 or speedvalue > 100:
+                return jsonify(
+                    {"status": "error", "message": "Speed must be 0-100"}
+                ), 400
+                return (
+                    jsonify({"status": "error", "message": "Speed must be 0-100"}),
+                    400,
+                )
+
+            db.collection("devices").document("ESP32001").set(
+                {
+                    "feederspeed": speedvalue,
+                    "feederstatus": "on" if speedvalue > 0 else "off",
+                    "updatedAt": datetime.utcnow(),
+                },
+                merge=True,
+            )
+            return jsonify(
+                {"status": "success", "message": f"Feeder speed set to {speedvalue}"}
+            ), 200
+
+        return jsonify({"status": "error", "message": "Invalid action"}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/getfeedingstatus", methods=["GET"])
+@api_login_required
+def getfeedingstatus():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        devicedoc = db.collection("devices").document("ESP32001").get()
+        if devicedoc.exists:
+            data = devicedoc.to_dict() or {}
+            return jsonify(
+                {
+                    "status": "success",
+                    "feederspeed": data.get("feederspeed", 0),
+                    "feederstatus": data.get("feederstatus", "off"),
+                }
+            ), 200
+
+        return jsonify({"status": "success", "feederspeed": 0, "feederstatus": "off"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =========================
+# FEEDING SCHEDULE (ESP32001)
+# =========================
+@app.route("/savefeedingschedule", methods=["POST"])
+@api_login_required
+def savefeedingschedule():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        data = request.get_json() or request.form
+        firstfeed = data.get("firstfeed")
+        secondfeed = data.get("secondfeed")
+        duration = data.get("duration")
+
+        if not firstfeed or not secondfeed or not duration:
+            return jsonify({"status": "error", "message": "All fields required"}), 400
+            return (
+                jsonify({"status": "error", "message": "All fields required"}),
+                400,
+            )
+
+        db.collection("devices").document("ESP32001").set(
+            {
+                "feedingschedule": {
+                    "firstfeed": firstfeed,
+                    "secondfeed": secondfeed,
+                    "duration": int(duration),
+                },
+                "scheduleenabled": True,
+                "updatedAt": datetime.utcnow(),
+            },
+            merge=True,
+        )
+        return jsonify({"status": "success", "message": "Feeding schedule saved"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/getfeedingscheduleinfo", methods=["GET"])
+@api_login_required
+def getfeedingscheduleinfo():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        devicedoc = db.collection("devices").document("ESP32001").get()
+        if devicedoc.exists:
+            data = devicedoc.to_dict() or {}
+            schedule = data.get("feedingschedule", {})
+            return jsonify(
+                {
+                    "status": "success",
+                    "schedule": schedule,
+                    "enabled": data.get("scheduleenabled", False),
+                }
+            ), 200
+
+        return jsonify({"status": "success", "schedule": {}, "enabled": False}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =========================
+# SENSOR API ROUTES (ESP32001 + ESP32002)
+# =========================
+@app.route("/addreading", methods=["POST"])
+def addreading():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+
+        deviceid = data.get("deviceid", "ESP32001")
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+        ammonia = to_float_or_none(data.get("ammonia"))
+        turbidity = normalize_turbidity(data.get("turbidity"))
+        distance = to_float_or_none(data.get("distance"))
+
+        docref = (
+            db.collection("devices")
+            .document(deviceid)
+            .collection("readings")
+            .document()
+        )
+        docref.set(
+            {
+                "temperature": temperature,
+                "ph": ph,
+                "ammonia": ammonia,
+                "turbidity": turbidity,
+                "distance": distance,
+                "createdAt": datetime.utcnow(),
+            }
+        )
+
+        return jsonify(
+            {"status": "success", "message": f"Reading saved for {deviceid}"}
+        ), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/apilatestreadings", methods=["GET"])
+def apilatestreadings():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+        readings_cursor = readings_ref.stream()
+
+        data = []
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            turb = normalize_turbidity(docdata.get("turbidity"))
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": turb,
+                    "createdAt": created_str,
+                }
+            )
+
+        data = list(reversed(data))
+        labels = [r["createdAt"] for r in data]
+        temp = [r["temperature"] for r in data]
+        ph = [r["ph"] for r in data]
+        ammonia = [r["ammonia"] for r in data]
+        turbidity = [r["turbidity"] for r in data]
+
+        return jsonify(
+            {
+                "labels": labels,
+                "temp": temp,
+                "ph": ph,
+                "ammonia": ammonia,
+                "turbidity": turbidity,
+            }
+        ), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# === INSERTED: DEVICE CONTROL API FOR ESP32_002 ===
+@app.route("/api/device_control", methods=["GET"])
+def api_device_control():
+    """
+    Control API for ESP32_002 water pump board.
+    Returns simple on/off states for pump, fill valve, drain valve.
+    For now, everything is OFF by default.
+    """
+    return jsonify(
+        {
+            "pump_status": "off",          # "on" or "off"
+            "fill_valve_status": "off",    # "on" or "off"
+            "drain_valve_status": "off",   # "on" or "off"
+        }
+    ), 200
+# === END INSERT ===
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/apilatestreadings", methods=["GET"])
+def apilatestreadings():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+        readings_cursor = readings_ref.stream()
+
+        data = []
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            turb = normalize_turbidity(docdata.get("turbidity"))
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": turb,
+                    "createdAt": created_str,
+                }
+            )
+
+        data = list(reversed(data))
+        labels = [r["createdAt"] for r in data]
+        temp = [r["temperature"] for r in data]
+        ph = [r["ph"] for r in data]
+        ammonia = [r["ammonia"] for r in data]
+        turbidity = [r["turbidity"] for r in data]
+
+        return jsonify(
+            {
+                "labels": labels,
+                "temp": temp,
+                "ph": ph,
+                "ammonia": ammonia,
+                "turbidity": turbidity,
+            }
+        ), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/historical", methods=["GET"])
+def historical():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+        )
+        readings = readings_ref.stream()
+
+        data = []
+        for r in readings:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            turb = normalize_turbidity(docdata.get("turbidity"))
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": turb,
+                    "createdAt": created_str,
+                }
+            )
+
+        return jsonify({"status": "success", "readings": data}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/apiultrasonicesp322", methods=["GET"])
+def apiultrasonicesp322():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+        return (
+            jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ),
+            500,
+        )
+
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32002")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(100)
+        )
+        readings_cursor = readings_ref.stream()
+
+        data = []
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            data.append(
+                {
+                    "distance": docdata.get("distance"),
+                    "createdAt": created_str,
+                }
+            )
+
+        data = list(reversed(data))
+        labels = [r["createdAt"] for r in data]
+        distances = [r["distance"] for r in data]
+
+        return jsonify({"status": "success", "labels": labels, "distance": distances}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# === DEVICE CONTROL API FOR ESP32_002 ===
+@app.route("/api/device_control", methods=["GET"])
+def api_device_control():
+    """
+    Control API for ESP32_002 water pump board.
+    Returns simple on/off states for pump, fill valve, drain valve.
+    For now, everything is OFF by default.
+    """
+    return jsonify(
+        {
+            "pump_status": "off",
+            "fill_valve_status": "off",
+            "drain_valve_status": "off",
+        }
+    ), 200
+
+# =========================
+# FEED COMMAND CHECK
+# =========================
+@app.route("/apicheckfeedcommand", methods=["GET"])
+def apicheckfeedcommand():
+    deviceid = request.args.get("deviceid", "ESP32001")
+    # For now always "none"; later you can add real commands
+    return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
+
+
+# =========================
+# HEALTH CHECK
+# =========================
 @app.route("/testfirestore")
 def testfirestore():
     try:
-        if db:
-            doc = db.collection("devices").document("ESP32001").get()
-            return jsonify({"status": "ok", "db_ready": True, "doc_exists": doc.exists})
-        return jsonify({"status": "warn", "db_ready": False})
+        if db is None:
+            return jsonify(
+                {"status": "error", "message": "Firestore not initialized on server"}
+            ), 500
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Firestore not initialized on server",
+                    }
+                ),
+                500,
+            )
+        doc = db.collection("devices").document("ESP32001").get()
+        return jsonify({"status": "ok", "exists": doc.exists}), 200
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/debug")
-def debug():
-    return jsonify({
-        "db": db is not None,
-        "firebase_apps": len(firebase_admin._apps),
-        "latest_request": {
-            "args": dict(request.args),
-            "form": dict(request.form),
-            "headers": dict(request.headers)
-        }
-    })
+
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "ok", "message": "Server reachable"}), 200
+
 
 # =========================
-# RUN SERVER
+# MAIN
 # =========================
 if __name__ == "__main__":
-    print("🐟 Fish Feeder Server v2.0")
-    print(f"Database: {'✅ ONLINE' if db else '❌ OFFLINE (local mode)'}")
-    print("Endpoints ready:")
-    print("  POST /addreading?turbidity=251&ammonia=8.0")
-    print("  GET  /dashboard")
-    print("  GET  /ping")
     app.run(host="0.0.0.0", port=5000, debug=True)
