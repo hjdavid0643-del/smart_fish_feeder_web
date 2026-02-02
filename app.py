@@ -39,10 +39,13 @@ def init_firebase():
             
         if not firebase_admin._apps:
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
-            firebase_app = firebase_admin.initialize_app(cred)
+            firebase_admin.initialize_app(cred)  # Creates DEFAULT app
         else:
-            firebase_app = firebase_admin.get_app()
-        return firestore.client(app=firebase_app)
+            print("Firebase already initialized")
+            
+        # ✅ CORRECT: Uses DEFAULT app automatically
+        return firestore.client()  # NO 'app=' parameter!
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -50,50 +53,44 @@ def init_firebase():
         return None
 
 db = init_firebase()
-serializer = URLSafeTimedSerializer(app.secret_key)
 
 
 # =========================
 # HELPERS
 # =========================
-def login_required(f):
-@wraps(f)
-def decorated(*args, **kwargs):
-if "user" not in session:
-return redirect(url_for("login"))
-return f(*args, **kwargs)
-
-return decorated
-
+def login_required(f):  # ← Fix this first (indentation)
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
 def api_login_required(f):
-@wraps(f)
-def decorated(*args, **kwargs):
-if "user" not in session:
-return jsonify({"status": "error", "message": "Unauthorized"}), 401
-return f(*args, **kwargs)
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
 
-return decorated
-
-
+# ✅ INSERT HERE ⬇️ (Lines ~110-120)
 def normalize_turbidity(value):
-try:
-v = float(value)
-except (TypeError, ValueError):
-return None
-if v < 0:
-v = 0.0
-if v > 3000:
-v = 3000.0
-return v
-
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v < 0:
+        v = 0.0
+    if v > 3000:
+        v = 3000.0
+    return v
 
 def to_float_or_none(value):
-try:
-return float(value)
-except (TypeError, ValueError):
-return None
-
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 # =========================
 # BASIC ROUTES
