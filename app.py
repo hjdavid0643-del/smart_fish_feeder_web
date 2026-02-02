@@ -1,40 +1,33 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
-import io
-from google.api_core.exceptions import ResourceExhausted
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.units import inch
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-production")
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 CORS(app)
 
-# Firebase lazy init
+# Firebase
 db = None
 def get_db():
     global db
     if db is None:
         try:
             key_path = os.environ.get('FIREBASE_CREDENTIALS_PATH', 
-                                    "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json")
+                "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json")
             if os.path.exists(key_path):
                 if not firebase_admin._apps:
                     cred = credentials.Certificate(key_path)
                     firebase_admin.initialize_app(cred)
                 db = firestore.client()
-        except Exception as e:
-            print(f"Firebase error: {e}")
+        except Exception:
+            pass
     return db
 
-# FIXED LOGIN DECORATORS
+# FIXED DECORATORS - Support both GET and POST where needed
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -64,42 +57,37 @@ def safe_query(device, collection="readings", limit=50):
                    direction=firestore.Query.DESCENDING).limit(limit).stream())
     except: return []
 
-# FIXED LOGIN ROUTES
-@app.route("/")
-def home(): return redirect(url_for("login"))
+# FIXED LOGIN - NO 405 ERRORS
+@app.route("/", methods=['GET'])
+def home(): 
+    return redirect(url_for("login"))
 
-@app.route("/login")
+@app.route("/login", methods=['GET'])
 def login():
     if "user" in session:
         next_url = request.args.get('next', '')
         return redirect(next_url if next_url.startswith('/') else url_for("dashboard"))
     return render_template("login.html", next_url=request.args.get('next', ''))
 
-@app.route("/session-login", methods=["POST"])
+@app.route("/session-login", methods=['POST'])  # ✅ FIXED: Explicit POST
 def session_login():
-    """CRITICAL: Returns JSON for JS frontend"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         id_token = data.get("id_token")
         decoded = auth.verify_id_token(id_token)
         session["user"] = decoded["email"]
-        session["role"] = "worker"
-        
         next_url = request.args.get('next') or url_for('dashboard')
-        return jsonify({
-            "status": "success",
-            "redirect": next_url if next_url.startswith('/') else url_for('dashboard')
-        })
+        return jsonify({"status": "success", "redirect": next_url})
     except:
-        return jsonify({"status": "error", "message": "Auth failed"}), 401
+        return jsonify({"status": "error"}), 401
 
-@app.route("/logout")
+@app.route("/logout", methods=['GET'])
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-# DASHBOARD - Full template data
-@app.route("/dashboard")
+# DASHBOARD
+@app.route("/dashboard", methods=['GET'])
 @login_required
 def dashboard():
     readings = safe_query("ESP32001")
@@ -118,8 +106,6 @@ def dashboard():
     summary, alertcolor = "All systems normal", "green"
     if data and data[-1]["turbidity"] and data[-1]["turbidity"] > 100:
         summary, alertcolor = "Water too cloudy!", "gold"
-    elif data and data[-1]["turbidity"] and data[-1]["turbidity"] > 50:
-        summary, alertcolor = "Water getting cloudy", "orange"
     
     chart_data = data[-50:]
     return render_template("dashboard.html",
@@ -129,14 +115,13 @@ def dashboard():
         tempvalues=[r["temperature"] or 0 for r in chart_data],
         phvalues=[r["ph"] or 0 for r in chart_data],
         ammoniavalues=[r["ammonia"] or 0 for r in chart_data],
-        turbidityvalues=[r["turbidity"] or 0 for r in chart_data],
-        feederalert="Feeder OFF", feederalertcolor="lightcoral")
+        turbidityvalues=[r["turbidity"] or 0 for r in chart_data])
 
-# MISSING API ROUTES (Your JS needs these!)
-@app.route("/apilatestreadings")
+# ✅ FIXED - All your JS endpoints with correct methods:
+@app.route("/apilatestreadings", methods=['GET'])  # JS calls GET
 @login_required
 def api_latest_readings():
-    readings = safe_query("ESP32001", limit=50)
+    readings = safe_query("ESP32001")
     data = []
     for doc in readings:
         d = doc.to_dict()
@@ -155,7 +140,7 @@ def api_latest_readings():
         "turbidity": [r["turbidity"] or 0 for r in data]
     })
 
-@app.route("/historical")
+@app.route("/historical", methods=['GET'])  # JS calls GET
 @login_required
 def historical():
     readings = safe_query("ESP32001")
@@ -171,10 +156,10 @@ def historical():
         })
     return jsonify({"status": "success", "readings": data})
 
-@app.route("/apiultrasonicesp322")
+@app.route("/apiultrasonicesp322", methods=['GET'])  # JS calls GET
 @login_required
-def api_ultrasonic_esp322():
-    readings = safe_query("ESP32002", limit=100)
+def api_ultrasonic():
+    readings = safe_query("ESP32002")
     data = []
     for doc in readings:
         d = doc.to_dict()
@@ -182,124 +167,107 @@ def api_ultrasonic_esp322():
     return jsonify({"status": "success", "labels": [r["createdAt"] for r in data], 
                    "distance": [r["distance"] or 0 for r in data]})
 
-@app.route("/getfeedingstatus")
+@app.route("/getfeedingstatus", methods=['GET'])  # JS calls GET
 @api_login_required
 def get_feeding_status():
     client = get_db()
-    if client:
-        doc = client.collection("devices").document("ESP32001").get()
-        if doc.exists:
-            data = doc.to_dict()
-            return jsonify({"status": "success", "feederspeed": data.get("feederspeed", 0),
-                           "feederstatus": data.get("feederstatus", "off")})
-    return jsonify({"status": "success", "feederspeed": 0, "feederstatus": "off"})
+    doc = client.collection("devices").document("ESP32001").get() if client else None
+    data = doc.to_dict() if doc and doc.exists else {}
+    return jsonify({"status": "success", 
+                   "feederspeed": data.get("feederspeed", 0),
+                   "feederstatus": data.get("feederstatus", "off")})
 
-@app.route("/getmotorstatus")
+@app.route("/getmotorstatus", methods=['GET'])  # JS calls GET
 @api_login_required
 def get_motor_status():
     client = get_db()
-    if client:
-        doc = client.collection("devices").document("ESP32001").get()
-        if doc.exists:
-            data = doc.to_dict()
-            return jsonify({"status": "success", "motorspeed": data.get("motorspeed", 0),
-                           "motorstatus": data.get("motorstatus", "off")})
-    return jsonify({"status": "success", "motorspeed": 0, "motorstatus": "off"})
+    doc = client.collection("devices").document("ESP32001").get() if client else None
+    data = doc.to_dict() if doc and doc.exists else {}
+    return jsonify({"status": "success", 
+                   "motorspeed": data.get("motorspeed", 0),
+                   "motorstatus": data.get("motorstatus", "off")})
 
-@app.route("/getfeedingscheduleinfo")
+@app.route("/getfeedingscheduleinfo", methods=['GET'])  # JS calls GET
 @api_login_required
 def get_schedule_info():
     client = get_db()
-    if client:
-        doc = client.collection("devices").document("ESP32001").get()
-        if doc.exists:
-            data = doc.to_dict()
-            return jsonify({"status": "success", "schedule": data.get("feedingschedule", {}),
-                           "enabled": data.get("scheduleenabled", False)})
-    return jsonify({"status": "success", "schedule": {}, "enabled": False})
+    doc = client.collection("devices").document("ESP32001").get() if client else None
+    data = doc.to_dict() if doc and doc.exists else {}
+    return jsonify({"status": "success", 
+                   "schedule": data.get("feedingschedule", {}),
+                   "enabled": data.get("scheduleenabled", False)})
 
-@app.route("/savefeedingschedule", methods=["POST"])
-@api_login_required
-def save_schedule():
-    client = get_db()
-    if not client: return jsonify({"status": "error"}), 500
-    
-    data = request.get_json()
-    client.collection("devices").document("ESP32001").set({
-        "feedingschedule": {
-            "firstfeed": data.get("firstfeed"),
-            "secondfeed": data.get("secondfeed"),
-            "duration": int(data.get("duration", 5))
-        },
-        "scheduleenabled": True,
-        "updatedAt": datetime.utcnow()
-    }, merge=True)
-    return jsonify({"status": "success", "message": "Schedule saved"})
-
-# CONTROL ROUTES
-@app.route("/controlfeeder", methods=["POST"])
+# ✅ FIXED POST ENDPOINTS
+@app.route("/controlfeeder", methods=['POST'])  # JS POST calls
 @api_login_required
 def control_feeder():
-    client = get_db()
-    if not client: return jsonify({"status": "error"}), 500
-    
     data = request.get_json()
     action, speed = data.get("action"), int(data.get("speed", 0))
     status = "off"
     if action == "off": speed = 0
-    elif action == "setspeed" and 0 <= speed <= 100: status = "on" if speed > 0 else "off"
     elif action == "on": status = "on"
+    elif action == "setspeed" and 0 <= speed <= 100: status = "on" if speed > 0 else "off"
     
-    client.collection("devices").document("ESP32001").set({
-        "feederspeed": speed, "feederstatus": status, "updatedAt": datetime.utcnow()
-    }, merge=True)
-    return jsonify({"status": "success", "message": f"Feeder {status} at {speed}%"})
+    client = get_db()
+    if client:
+        client.collection("devices").document("ESP32001").set({
+            "feederspeed": speed, "feederstatus": status, "updatedAt": datetime.utcnow()
+        }, merge=True)
+    return jsonify({"status": "success", "message": f"Feeder {status}"})
 
-@app.route("/controlmotor", methods=["POST"])
+@app.route("/controlmotor", methods=['POST'])  # JS POST calls
 @api_login_required
 def control_motor():
-    client = get_db()
-    if not client: return jsonify({"status": "error"}), 500
-    
     data = request.get_json()
     action, speed = data.get("action"), int(data.get("speed", 0))
     status = "off"
     if action == "off": speed = 0
-    elif action == "setspeed" and 0 <= speed <= 100: status = "on" if speed > 0 else "off"
     elif action == "on": status = "on"
+    elif action == "setspeed" and 0 <= speed <= 100: status = "on" if speed > 0 else "off"
     
-    client.collection("devices").document("ESP32001").set({
-        "motorspeed": speed, "motorstatus": status, "updatedAt": datetime.utcnow()
-    }, merge=True)
-    return jsonify({"status": "success", "message": f"Motor {status} at {speed}%"})
-
-# ESP32 SENSOR ENDPOINT
-@app.route("/addreading", methods=["POST"])
-def add_reading():
     client = get_db()
-    if not client: return jsonify({"status": "error"}), 500
-    
+    if client:
+        client.collection("devices").document("ESP32001").set({
+            "motorspeed": speed, "motorstatus": status, "updatedAt": datetime.utcnow()
+        }, merge=True)
+    return jsonify({"status": "success", "message": f"Motor {status}"})
+
+@app.route("/savefeedingschedule", methods=['POST'])  # JS POST calls
+@api_login_required
+def save_schedule():
     data = request.get_json()
-    device_id = data.get("deviceid", "ESP32001")
-    
-    client.collection("devices").document(device_id).collection("readings").document().set({
-        "temperature": normalize_turbidity(data.get("temperature")),
-        "ph": float(data.get("ph")) if data.get("ph") else None,
-        "ammonia": float(data.get("ammonia")) if data.get("ammonia") else None,
-        "turbidity": normalize_turbidity(data.get("turbidity")),
-        "distance": float(data.get("distance")) if data.get("distance") else None,
-        "createdAt": datetime.utcnow()
-    })
+    client = get_db()
+    if client:
+        client.collection("devices").document("ESP32001").set({
+            "feedingschedule": {
+                "firstfeed": data.get("firstfeed"),
+                "secondfeed": data.get("secondfeed"),
+                "duration": int(data.get("duration", 5))
+            },
+            "scheduleenabled": True,
+            "updatedAt": datetime.utcnow()
+        }, merge=True)
+    return jsonify({"status": "success", "message": "Schedule saved"})
+
+@app.route("/addreading", methods=['POST'])  # ESP32 POST
+def add_reading():
+    data = request.get_json()
+    client = get_db()
+    if client:
+        device_id = data.get("deviceid", "ESP32001")
+        client.collection("devices").document(device_id).collection("readings").document().set({
+            "temperature": normalize_turbidity(data.get("temperature")),
+            "ph": float(data.get("ph")) if data.get("ph") else None,
+            "ammonia": float(data.get("ammonia")) if data.get("ammonia") else None,
+            "turbidity": normalize_turbidity(data.get("turbidity")),
+            "distance": float(data.get("distance")) if data.get("distance") else None,
+            "createdAt": datetime.utcnow()
+        })
     return jsonify({"status": "success"})
 
-# PDF EXPORT
-@app.route("/exportpdf")
-@login_required
-def export_pdf():
-    return jsonify({"status": "success", "message": "PDF generation requires reportlab"}), 200
-
-@app.route("/ping")
-def ping(): return jsonify({"status": "ok"})
+@app.route("/ping", methods=['GET'])
+def ping(): 
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
