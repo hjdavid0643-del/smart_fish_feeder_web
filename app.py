@@ -1,12 +1,12 @@
 from flask import (
-Flask,
-render_template,
-request,
-redirect,
-url_for,
-session,
-jsonify,
-send_file,
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    session,
+    jsonify,
+    send_file,
 )
 from flask_cors import CORS
 import firebase_admin
@@ -21,7 +21,7 @@ from google.api_core.exceptions import ResourceExhausted
 # =========================
 # CONFIG / FLAGS
 # =========================
-FIRESTORE_LOGIN_DISABLED = False # keep in case you ever want to block login manually
+FIRESTORE_LOGIN_DISABLED = False
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
@@ -37,7 +37,7 @@ def init_firebase():
             print(f"Firebase key not found at {FIREBASE_KEY_PATH}")
             return None
             
-        if not firebase_admin._apps:  # ← ADD THIS CHECK
+        if not firebase_admin._apps:
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
             firebase_app = firebase_admin.initialize_app(cred)
         else:
@@ -49,10 +49,9 @@ def init_firebase():
         print("Error initializing Firebase:", e)
         return None
 
-
-
 db = init_firebase()
 serializer = URLSafeTimedSerializer(app.secret_key)
+
 
 # =========================
 # HELPERS
