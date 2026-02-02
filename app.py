@@ -12,7 +12,6 @@ from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from functools import wraps
-from itsdangerous import URLSafeTimedSerializer
 from datetime import datetime, timedelta
 import os
 import io
@@ -51,9 +50,10 @@ def init_firebase():
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
-
 db = init_firebase()
-
+@app.route("/")
+def home():
+    return redirect(url_for("login"))
 
 # =========================
 # HELPERS
@@ -97,20 +97,20 @@ def to_float_or_none(value):
 # =========================
 @app.route("/")
 def home():
-return redirect(url_for("login"))
-
+    return redirect(url_for("login")) 
 
 # =========================
 # AUTH ROUTES (Firebase Auth)
 # =========================
 @app.route("/login", methods=["GET"])
 def login():
-# optional global flag if you want to disable login completely
-if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
-return render_template(
-"login.html",
-error="Login temporarily disabled. Please try again later.",
-)
+    # optional global flag if you want to disable login completely
+    if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
+        return render_template(
+            "login.html",
+            error="Login temporarily disabled. Please try again later.",
+        )
+
 
 if "user" in session:
 return redirect(url_for("dashboard"))
@@ -122,36 +122,51 @@ def session_login():
 """
 Called by frontend JS after Firebase Auth signInWithEmailAndPassword.
 Expects JSON: { "id_token": "<Firebase ID token>" }
-"""
-try:
-data = request.get_json() or {}
-id_token = data.get("id_token")
-if not id_token:
-return jsonify({"status": "error", "message": "Missing token"}), 400
+   if FIRESTORE_LOGIN_DISABLED...:     
+        return render_template(...)      
 
-decoded = auth.verify_id_token(id_token)
-email = decoded.get("email")
-if not email:
-return jsonify({"status": "error", "message": "No email in token"}), 400
+if "user" in  
 
-# store authenticated user in session
-session["user"] = email
-# if you later store roles in Firestore, you can look them up here
-session["role"] = "worker"
-return redirect(url_for("dashboard"))
-except Exception as e:
-return jsonify({"status": "error", "message": str(e)}), 401
+@app.route("/login", methods=["GET"])
+def login():
+    if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
+        return render_template("login.html", error="Login temporarily disabled.")
+    if "user" in session:
+        return redirect(url_for("dashboard"))
+    return render_template("login.html")
+
+@app.route("/session-login", methods=["POST"])
+def session_login():
+    try:
+        data = request.get_json() or {}
+        id_token = data.get("id_token")
+        if not id_token:
+            return jsonify({"status": "error", "message": "Missing token"}), 400
+        decoded = auth.verify_id_token(id_token)
+        email = decoded.get("email")
+        if not email:
+            return jsonify({"status": "error", "message": "No email in token"}), 400
+        session["user"] = email
+        session["role"] = "worker"
+        return redirect(url_for("dashboard"))
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 401
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+                      
+session["role"] = "worker"                   
+    return redirect(url_for("dashboard"))          
+except Exception as e:                             
+    return jsonify({"status": "error", "message": str(e)}), 401
 
 
 @app.route("/logout")
 def logout():
 session.clear()
 return redirect(url_for("login"))
-
-
-# (Optional) you can keep register/reset routes if you want to manage Firestore users,
-# but if you fully switch to Firebase Auth signup, you may not need these anymore.
-
 
 # =========================
 # DASHBOARD
