@@ -127,6 +127,10 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
+@app.route("/register")
+@login_required                    ← ADD THIS LINE
+def register():
+    return render_template("register.html", error=None)    ← ALSO change this
 
         if not email or not password:
             return render_template("login.html", error="Email and password are required.")
