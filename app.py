@@ -47,13 +47,12 @@ def init_firebase():
         return firestore.client(app=firebase_app)
     except Exception as e:
         import traceback
-
         traceback.print_exc()
         print("Error initializing Firebase:", e)
         return None
 
-
 db = init_firebase()
+
 
 
 
@@ -96,16 +95,7 @@ def to_float_or_none(value):
     except (TypeError, ValueError):
         return None
 
-def normalize_turbidity(value):
-    ...
-    return v
 
-
-def to_float_or_none(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 @app.route("/update_temp_ph", methods=["POST"])
@@ -137,14 +127,16 @@ def update_temp_ph():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # =========================
 # BASIC ROUTES
 # =========================
 @app.route("/")
 def home():
     
-   return redirect(url_for("login"))
+   return redirect(url_for("login")) 
+
+
+
 
 
 # =========================
@@ -222,7 +214,7 @@ def dashboard():
     try:
         readings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
             .limit(50)
@@ -298,7 +290,7 @@ def dashboard():
     feederalert = "Feeder is currently OFF"
     feederalertcolor = "lightcoral"
     try:
-        devicedoc = db.collection("devices").document("ESP32001").get()
+        devicedoc = db.collection("devices").document("ESP32_001").get()
         if devicedoc.exists:
             d = devicedoc.to_dict() or {}
             feederstatus = d.get("feederstatus", "off")
@@ -313,7 +305,7 @@ def dashboard():
     lowfeedalert = None
     lowfeedcolor = "#ff7043"
     try:
-        hopperdoc = db.collection("devices").document("ESP32002").get()
+        hopperdoc = db.collection("devices").document("ESP32_002").get()
         if hopperdoc.exists:
             hdata = hopperdoc.to_dict() or {}
             levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
@@ -360,7 +352,7 @@ def mosfet():
 
     readings_ref = (
         db.collection("devices")
-        .document("ESP32001")
+        .document("ESP32_001")
         .collection("readings")
         .order_by("createdAt", direction=firestore.Query.DESCENDING)
         .limit(50)
@@ -412,7 +404,7 @@ def controlfeedingpage():
     try:
         readings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
             .limit(10)
@@ -437,7 +429,7 @@ def controlfeedingpage():
 
         allreadings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
             .limit(50)
@@ -517,7 +509,7 @@ def exportpdf():
         twentyfour_hours_ago = now - timedelta(hours=24)
         readings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .where("createdAt", ">=", twentyfour_hours_ago)
             .order_by("createdAt", direction=firestore.Query.ASCENDING)
@@ -623,7 +615,7 @@ def exportpdf():
 
 
 # =========================
-# MOTOR / FEEDER CONTROL (ESP32001)
+# MOTOR / FEEDER CONTROL (ESP32_001)
 # =========================
 @app.route("/controlmotor", methods=["POST"])
 @api_login_required
@@ -639,7 +631,7 @@ def controlmotor():
         speed = data.get("speed", 50)
 
         if action == "off":
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "motorspeed": 0,
                     "motorstatus": "off",
@@ -650,7 +642,7 @@ def controlmotor():
             return jsonify({"status": "success", "message": "Motor turned OFF"}), 200
 
         elif action == "on":
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "motorspeed": int(speed),
                     "motorstatus": "on",
@@ -669,7 +661,7 @@ def controlmotor():
                     {"status": "error", "message": "Speed must be 0-100"}
                 ), 400
 
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "motorspeed": speedvalue,
                     "motorstatus": "on" if speedvalue > 0 else "off",
@@ -695,7 +687,7 @@ def getmotorstatus():
         ), 500
 
     try:
-        devicedoc = db.collection("devices").document("ESP32001").get()
+        devicedoc = db.collection("devices").document("ESP32_001").get()
         if devicedoc.exists:
             data = devicedoc.to_dict() or {}
             return jsonify(
@@ -724,7 +716,7 @@ def controlfeeder():
         speed = data.get("speed", 50)
 
         if action == "off":
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "feederspeed": 0,
                     "feederstatus": "off",
@@ -735,7 +727,7 @@ def controlfeeder():
             return jsonify({"status": "success", "message": "Feeder turned OFF"}), 200
 
         elif action == "on":
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "feederspeed": int(speed),
                     "feederstatus": "on",
@@ -754,7 +746,7 @@ def controlfeeder():
                     {"status": "error", "message": "Speed must be 0-100"}
                 ), 400
 
-            db.collection("devices").document("ESP32001").set(
+            db.collection("devices").document("ESP32_001").set(
                 {
                     "feederspeed": speedvalue,
                     "feederstatus": "on" if speedvalue > 0 else "off",
@@ -780,7 +772,7 @@ def getfeedingstatus():
         ), 500
 
     try:
-        devicedoc = db.collection("devices").document("ESP32001").get()
+        devicedoc = db.collection("devices").document("ESP32_001").get()
         if devicedoc.exists:
             data = devicedoc.to_dict() or {}
             return jsonify(
@@ -797,7 +789,7 @@ def getfeedingstatus():
 
 
 # =========================
-# FEEDING SCHEDULE (ESP32001)
+# FEEDING SCHEDULE (ESP32_001)
 # =========================
 @app.route("/savefeedingschedule", methods=["POST"])
 @api_login_required
@@ -816,7 +808,7 @@ def savefeedingschedule():
         if not firstfeed or not secondfeed or not duration:
             return jsonify({"status": "error", "message": "All fields required"}), 400
 
-        db.collection("devices").document("ESP32001").set(
+        db.collection("devices").document("ESP32_001").set(
             {
                 "feedingschedule": {
                     "firstfeed": firstfeed,
@@ -842,7 +834,7 @@ def getfeedingscheduleinfo():
         ), 500
 
     try:
-        devicedoc = db.collection("devices").document("ESP32001").get()
+        devicedoc = db.collection("devices").document("ESP32_001").get()
         if devicedoc.exists:
             data = devicedoc.to_dict() or {}
             schedule = data.get("feedingschedule", {})
@@ -860,7 +852,7 @@ def getfeedingscheduleinfo():
 
 
 # =========================
-# SENSOR API ROUTES (ESP32001 + ESP32002)
+# SENSOR API ROUTES (ESP32_001 + ESP32_002)
 # =========================
 @app.route("/addreading", methods=["POST"])
 def addreading():
@@ -874,7 +866,7 @@ def addreading():
         if not data:
             return jsonify({"status": "error", "message": "No data provided"}), 400
 
-        deviceid = data.get("deviceid", "ESP32001")
+        deviceid = data.get("deviceid", "ESP32_001")
         temperature = to_float_or_none(data.get("temperature"))
         ph = to_float_or_none(data.get("ph"))
         ammonia = to_float_or_none(data.get("ammonia"))
@@ -915,7 +907,7 @@ def apilatestreadings():
     try:
         readings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
             .limit(50)
@@ -971,7 +963,7 @@ def historical():
     try:
         readings_ref = (
             db.collection("devices")
-            .document("ESP32001")
+            .document("ESP32_001")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
         )
@@ -1011,7 +1003,7 @@ def apiultrasonicesp322():
     try:
         readings_ref = (
             db.collection("devices")
-            .document("ESP32002")
+            .document("ESP32_002")
             .collection("readings")
             .order_by("createdAt", direction=firestore.Query.DESCENDING)
             .limit(100)
@@ -1044,7 +1036,7 @@ def apiultrasonicesp322():
 
 @app.route("/apicheckfeedcommand", methods=["GET"])
 def apicheckfeedcommand():
-    deviceid = request.args.get("deviceid", "ESP32001")
+    deviceid = request.args.get("deviceid", "ESP32_001")
     return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
 
 
@@ -1058,7 +1050,7 @@ def testfirestore():
             return jsonify(
                 {"status": "error", "message": "Firestore not initialized on server"}
             ), 500
-        doc = db.collection("devices").document("ESP32001").get()
+        doc = db.collection("devices").document("ESP32_001").get()
         return jsonify({"status": "ok", "exists": doc.exists}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -1073,5 +1065,5 @@ def ping():
 # MAIN
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
- 
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
