@@ -270,7 +270,6 @@
         <h1>🐟 Smart Fish Feeder Dashboard</h1>
 
         <div class="top-buttons">
-            <!-- Flask route is /exportpdf -->
             <a class="btn btn-pdf" href="/exportpdf" download>📥 Download PDF</a>
             <button id="btnHistorical" class="btn btn-view" type="button">
                 View Historical Data
@@ -280,7 +279,6 @@
             </button>
         </div>
 
-        <!-- Flask passes 'summary' and 'alertcolor' -->
         <div class="summary" style="background-color: {{ alertcolor }};">
             {{ summary }}
         </div>
@@ -311,20 +309,20 @@
             </table>
         </div>
 
-        <h2>Sensor Trends</h2>
+        <h2>Sensor Trends (ESP32_001)</h2>
         <div class="chart-wrapper" style="height: 260px;">
             <canvas id="sensorChart"></canvas>
         </div>
 
-        <!-- ULTRASONIC WATER LEVEL (ESP32‑2) -->
-        <h2>Water Level (ESP32‑2 Ultrasonic)</h2>
+        <!-- WATER LEVEL (ESP32_002 ULTRASONIC) -->
+        <h2>Water Level (ESP32_002)</h2>
         <div class="status-box" id="ultrasonic-box">
             Distance: <span id="distance-value">--</span> cm
         </div>
 
-        <!-- MOSFET 1: FEEDING CONTROL -->
+        <!-- FEEDER CONTROL (ESP32_001) -->
         <div class="control-section">
-            <h2 style="text-align: center; margin-bottom: 20px;">🍽️ MOSFET Feeding Control</h2>
+            <h2 style="text-align: center; margin-bottom: 20px;">🍽️ Feeder Control (ESP32_001)</h2>
 
             <div style="margin-bottom: 30px;">
                 <h3 style="font-size: 18px; margin-bottom: 15px;">Manual Feeding</h3>
@@ -342,12 +340,12 @@
             </div>
 
             <div class="status-box">
-                Feed Speed: <span id="current-feed-speed">0</span>% |
+                Feed Speed: <span id="current-feed-speed">0</span>% | 
                 Status: <span id="feed-status-text">OFF</span>
             </div>
 
             <div class="schedule-box" style="margin-top: 20px;">
-                <h3 style="font-size: 18px; margin-bottom: 15px;">⏰ Automatic Feeding Schedule</h3>
+                <h3 style="font-size: 18px; margin-bottom: 15px;">⏰ Auto Feeding Schedule</h3>
 
                 <div class="schedule-inputs">
                     <div class="input-group">
@@ -373,9 +371,9 @@
             </div>
         </div>
 
-        <!-- MOSFET 2: MOTOR CONTROL -->
+        <!-- MOTOR CONTROL (ESP32_001) -->
         <div class="control-section">
-            <h2 style="text-align: center; margin-bottom: 20px;">🔌 MOSFET Motor Control</h2>
+            <h2 style="text-align: center; margin-bottom: 20px;">🔌 Motor Control (ESP32_001)</h2>
 
             <div class="control-buttons">
                 <button class="btn-control-on" onclick="motorControl('on')">▶ Motor ON</button>
@@ -390,14 +388,14 @@
             </div>
 
             <div class="status-box">
-                Motor RPM: <span id="current-rpm">0</span>% |
+                Motor RPM: <span id="current-rpm">0</span>% | 
                 Status: <span id="motor-status-text">OFF</span>
             </div>
         </div>
 
         <!-- Historical section -->
         <div id="historicalSection" style="display:none;">
-            <h2>Historical Sensor Data</h2>
+            <h2>Historical Sensor Data (ESP32_001)</h2>
             <div class="table-wrapper">
                 <table id="historicalTable">
                     <thead>
@@ -497,7 +495,7 @@
                         historicalTableBody.innerHTML = '';
                         data.readings.forEach(row => {
                             const tr = document.createElement('tr');
-                            tr.innerHTML =
+                            tr.innerHTML = 
                                 `<td>${row.createdAt}</td>` +
                                 `<td>${row.temperature}</td>` +
                                 `<td>${row.ph}</td>` +
@@ -519,7 +517,6 @@
     });
 
     function refreshSensorTable() {
-        // Flask route is /apilatestreadings
         apiFetch('/apilatestreadings')
             .then(data => {
                 if (!data) return;
@@ -548,7 +545,6 @@
     setInterval(refreshSensorTable, 10000);
 
     function loadUltrasonic() {
-        // Flask route is /apiultrasonicesp322
         apiFetch('/apiultrasonicesp322')
             .then(data => {
                 if (!data || data.status !== 'success') return;
@@ -561,7 +557,6 @@
     }
 
     function feedingControl(action) {
-        // Flask route is /controlfeeder
         apiFetch('/controlfeeder', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -591,7 +586,6 @@
     }
 
     function loadFeedingStatus() {
-        // Flask route is /getfeedingstatus
         apiFetch('/getfeedingstatus')
             .then(data => {
                 if (!data || data.status !== 'success') return;
@@ -604,7 +598,6 @@
     }
 
     function motorControl(action) {
-        // Flask route is /controlmotor
         apiFetch('/controlmotor', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -634,7 +627,6 @@
     }
 
     function loadMotorStatus() {
-        // Flask route is /getmotorstatus
         apiFetch('/getmotorstatus')
             .then(data => {
                 if (!data || data.status !== 'success') return;
@@ -652,7 +644,6 @@
         const duration = document.getElementById('feedDuration').value;
 
         try {
-            // Flask route is /savefeedingschedule; expects firstfeed/secondfeed/duration
             const data = await apiFetch('/savefeedingschedule', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -674,7 +665,6 @@
 
     async function loadScheduleInfo() {
         try {
-            // Flask route is /getfeedingscheduleinfo
             const data = await apiFetch('/getfeedingscheduleinfo');
             if (!data || data.status !== 'success') return;
 
