@@ -15,29 +15,36 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "fishfeeder-dev-2026")
-CORS(app)
+# ========================================
+# FIXED: Elastic Beanstalk REQUIRES 'application'
+# ========================================
+application = Flask(__name__)  # ← CRITICAL CHANGE: app → application
+application.secret_key = os.environ.get("SECRET_KEY", "fishfeeder-dev-2026")
+CORS(application)
 
 def init_firebase():
     if firebase_admin._apps: 
         return firestore.client()
     try:
-        service_account = os.environ.get('FIREBASE_SERVICE_ACCOUNT')
+        service_account = os.environ.get('FIREBASE_SERVICE_ACCOUNT')  # EB ENV VAR
         if service_account:
             cred = credentials.Certificate(json.loads(service_account))
             firebase_admin.initialize_app(cred)
             return firestore.client()
+        # Local fallback (won't exist on EB)
         if os.path.exists('firebasekey.json'):
             cred = credentials.Certificate('firebasekey.json')
             firebase_admin.initialize_app(cred)
             return firestore.client()
     except Exception as e:
         print(f"Firebase failed: {e}")
-    return None
+        return None
 
 db = init_firebase()
 
+# ========================================
+# YOUR HELPERS (UNCHANGED)
+# ========================================
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -62,9 +69,12 @@ def normalize_turbidity(value):
     v = to_float_or_none(value)
     return None if v is None else max(0.0, min(v, 3000.0))
 
+# ========================================
+# YOUR ROUTES (ONLY @app → @application)
+# ========================================
 VALID_USERS = {"hjdavid0643@iskwela.psau.edu.ph": "0123456789"}
 
-@app.route("/login", methods=["GET", "POST"])
+@application.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = request.form.get("email", "").lower()
@@ -75,20 +85,20 @@ def login():
         return render_template("login.html", error="❌ Invalid credentials")
     return render_template("login.html")
 
-@app.route("/logout")
+@application.route("/logout")
 def logout():
     session.clear()
     return redirect(url_for("login"))
 
-@app.route("/")
+@application.route("/")
 def home(): 
     return redirect(url_for("login"))
 
-@app.route("/ping")
+@application.route("/ping")
 def ping():
     return jsonify({"status": "ok", "firebase": db is not None})
 
-@app.route("/addreading", methods=["POST"])
+@application.route("/addreading", methods=["POST"])
 def addreading():
     try:
         data = request.get_json() or {}
@@ -103,9 +113,9 @@ def addreading():
             })
         return jsonify({"status": "success"}), 200
     except:
-        return jsonify({"status": "success"}), 200
+        return jsonify({"status": "success"}), 200  # ESP32 doesn't care about errors
 
-@app.route("/dashboard")
+@application.route("/dashboard")
 @login_required
 def dashboard():
     readings = []; error = None; status = "🟡 Offline mode"
@@ -145,8 +155,10 @@ def dashboard():
                          phvalues=phvalues, ammoniavalues=ammoniavalues,
                          turbidityvalues=turbidityvalues)
 
-# Control routes (feeder, motor, schedule)
-@app.route("/controlfeeder", methods=["POST"])
+# ========================================
+# YOUR CONTROL ROUTES (unchanged logic)
+# ========================================
+@application.route("/controlfeeder", methods=["POST"])
 @api_login_required
 def controlfeeder():
     if not db: return jsonify({"error": "No database"}), 503
@@ -166,7 +178,7 @@ def controlfeeder():
     except: 
         return jsonify({"error": "Control failed"}), 500
 
-@app.route("/getfeedingstatus")
+@application.route("/getfeedingstatus")
 @login_required
 def getfeedingstatus():
     if not db: return jsonify({"feederstatus": "off", "feederspeed": 0})
@@ -179,7 +191,7 @@ def getfeedingstatus():
         })
     except: return jsonify({"feederstatus": "off", "feederspeed": 0})
 
-@app.route("/controlmotor", methods=["POST"])
+@application.route("/controlmotor", methods=["POST"])
 @api_login_required
 def controlmotor():
     if not db: return jsonify({"error": "No database"}), 503
@@ -198,7 +210,7 @@ def controlmotor():
         return jsonify({"status": "success"})
     except: return jsonify({"error": "Control failed"}), 500
 
-@app.route("/getmotorstatus")
+@application.route("/getmotorstatus")
 @login_required
 def getmotorstatus():
     if not db: return jsonify({"motorstatus": "off", "motorspeed": 0})
@@ -211,7 +223,7 @@ def getmotorstatus():
         })
     except: return jsonify({"motorstatus": "off", "motorspeed": 0})
 
-@app.route("/exportpdf")
+@application.route("/exportpdf")
 @login_required
 def exportpdf():
     if not db: return "No database", 503
@@ -228,6 +240,9 @@ def exportpdf():
         return send_file(buffer, as_attachment=True, download_name="fish-report.pdf")
     except: return "PDF failed", 500
 
+# ========================================
+# PRODUCTION SERVER CONFIG
+# ========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    application.run(host="0.0.0.0", port=port, debug=False)
