@@ -24,14 +24,6 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 
-
-FIREBASE_KEY_PATH = "firebase-key.json"
-VALID_USERS = {
-    "admin@example.com": "password123",
-    "user@example.com": "password456"
-}
-
-
 # =========================
 # CONFIG
 # =========================
@@ -40,6 +32,8 @@ FIRESTORE_LOGIN_DISABLED = False
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
+
+FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
 
 # =========================
 # FIREBASE / FIRESTORE INIT
@@ -62,68 +56,14 @@ def init_firebase():
         firebase_app = firebase_admin.initialize_app(cred)
         return firestore.client(app=firebase_app)
     except Exception as e:
-        print(f"Firebase error: {e}")  # ← ADD THIS LINE
-        return None                   # ← ADD THIS LINE
-
         print(f"Firebase error: {e}")
         return None
 
 db = init_firebase()
 print(f"Firestore ready: {'✅' if db else '❌'}")
 
-def to_float_or_none(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
-@app.route("/update_temp_ph", methods=["POST"])
-def update_temp_ph():
-    if db is None:
-        return jsonify({"status": "error", "message": "Firestore not initialized"}), 500
-    try:
-        data = request.get_json() or {}  # ← ADD THIS MISSING LINE
-        temperature = to_float_or_none(data.get("temperature"))
-        ph = to_float_or_none(data.get("ph"))
-        
-        if temperature is None or ph is None:
-            return jsonify({
-                "status": "error", 
-                "message": f"Invalid data: temp={data.get('temperature')}, ph={data.get('ph')}"
-            }), 400
 
-        db.collection("devices").document("ESP32_001").set({
-            "temperature": temperature,
-            "ph": ph,
-            "updatedAt": datetime.utcnow()
-        }, merge=True)
-        
-        print(f"✅ SAVED: Temp={temperature}, pH={ph}")
-        return jsonify({"status": "success"}), 200
-        
-    except Exception as e:
-        print(f"❌ ERROR: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-        
-        if temperature is None or ph is None:
-            return jsonify({
-                "status": "error", 
-                "message": f"Got temp={data.get('temperature')}, ph={data.get('ph')}"
-            }), 400
-
-        db.collection("devices").document("ESP32_001").set({
-            "temperature": temperature,
-            "ph": ph,
-            "updatedAt": datetime.utcnow()
-        }, merge=True)
-        
-        print(f"✅ SAVED: Temp={temperature}, pH={ph}")
-        return jsonify({"status": "success"}), 200
-        
-    except Exception as e:
-        print(f"❌ ERROR: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
 
 # =========================
 # HELPERS
@@ -155,14 +95,69 @@ def normalize_turbidity(value):
         v = 0.0
     if v > 3000:
         v = 3000.0
-    return v                                     
+    return v
+
+
+def to_float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+
+
+@app.route("/update_temp_ph", methods=["POST"])
+def update_temp_ph():
+    if db is None:
+        return jsonify(
+            {"status": "error", "message": "Firestore not initialized on server"}
+        ), 500
+
+    try:
+        data = request.get_json() or {}
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+
+        if temperature is None or ph is None:
+            return jsonify(
+                {"status": "error", "message": "temperature and ph required"}
+            ), 400
+
+        db.collection("devices").document("ESP32_001").set(
+            {
+                "temperature": temperature,
+                "ph": ph,
+                "updatedAt": datetime.utcnow(),
+            },
+            merge=True,
+        )
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # =========================
 # BASIC ROUTES
 # =========================
 @app.route("/")
 def home():
-    return redirect(url_for("login")) 
+    
+   return redirect(url_for("login")) 
+
+
+
+
+
+# =========================
+# AUTH ROUTES (simple session auth)
+# =========================
+# Hard‑coded test user; replace with real user storage later.
+VALID_USERS = {
+    "hjdavid0643@iskwela.psau.edu.ph": "0123456789",
+}
+
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
@@ -170,11 +165,6 @@ def login():
             "login.html",
             error="Login temporarily disabled. Please try again later.",
         )
-
-    # Handle GET (show login page) or already logged in
-    if "user" in session:
-        return redirect(url_for("dashboard"))
-    return render_template("login.html")
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -1054,35 +1044,9 @@ def apiultrasonicesp322():
 
 
 @app.route("/apicheckfeedcommand", methods=["GET"])
-@esp32_auth
 def apicheckfeedcommand():
     deviceid = request.args.get("deviceid", "ESP32_001")
-    
-    
-    try:
-        device_doc = db.collection("devices").document(deviceid).get()
-        if not device_doc.exists:
-            return jsonify({"status": "error", "message": "Unknown device"}), 404
-            
-        # Check commands collection
-        cmd_query = (db.collection("commands")
-                    .where("deviceid", "==", deviceid)
-                    .order_by("timestamp", direction=firestore.Query.DESCENDING)
-                    .limit(1)
-                    .stream())
-        
-        command = "none"
-        for cmd_doc in cmd_query:
-            cmd_data = cmd_doc.to_dict()
-            command = cmd_data.get('action', 'none')
-            # Delete after reading
-            cmd_doc.reference.delete()
-            break
-            
-    except Exception as e:
-        print(f"Command check error: {e}")
-    
-    return jsonify({"status": "success", "deviceid": deviceid, "command": command}), 200
+    return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
 
 
 # =========================
