@@ -32,39 +32,53 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
+# =========================
+# FIREBASE DUAL INIT 
+# =========================
+from firebase_admin import credentials, firestore, db as rtdb
 
-# =========================
-# FIREBASE / FIRESTORE INIT (Render-friendly)
-# =========================
 def init_firebase():
     try:
-        FIREBASE_KEY_PATH = os.environ.get(
-            "FIREBASE_KEY_PATH", "/etc/secrets/firebase-key.json"
-        )
-
+        FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH", "/etc/secrets/firebase-key.json")
         if not os.path.exists(FIREBASE_KEY_PATH):
-            print(f"Firebase key file not found at {FIREBASE_KEY_PATH}")
-            return None
+            print(f"Firebase key missing: {FIREBASE_KEY_PATH}")
+            return None, None
 
-        # Initialize Firebase only if not already initialized
         if not firebase_admin._apps:
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
-            firebase_app = firebase_admin.initialize_app(cred)
+            firebase_app = firebase_admin.initialize_app(cred, {
+                # Line 62 - REPLACE with this EXACT URL:
+               'databaseURL': 'https://authentication--fish-feeder-default-rtdb.asia-southeast1.firebasedatabase.app/'
+
+            })
         else:
             firebase_app = firebase_admin.get_app()
 
-        print("Firestore ready: ✅")
-        return firestore.client(app=firebase_app)
+        firestore_db = firestore.client(app=firebase_app)
+        rtdb_db = rtdb.reference()
+        print("Firestore + RTDB ready: ✅")
+        return firestore_db, rtdb_db
 
     except Exception as e:
         import traceback
-
         traceback.print_exc()
         print("Firebase error:", e)
-        print("Firestore ready: ❌")
-        return None
+        return None, None
 
-db = init_firebase()
+# 🔥 CRITICAL: These 3 lines must be together
+db_firestore, db_rtdb = init_firebase()  # 1. Initialize
+db = db_firestore                        # 2. Bridge old code
+                                         # 3. Now /testrtdb works
+
+@app.route("/testrtdb")  # Move here
+def testrtdb():
+    try:
+        if db_rtdb is None:
+            return jsonify({"error": "RTDB not ready"}), 500
+        snapshot = db_rtdb.child("devices").child("ESP32001").child("readings").limit_to_last(1).get()
+        return jsonify({"status": "ok", "rtdb_data": snapshot.val()}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # =========================
