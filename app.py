@@ -34,24 +34,35 @@ CORS(app)
 
 
 # =========================
-# FIREBASE / FIRESTORE INIT
+# FIREBASE / FIRESTORE INIT (Render-friendly)
 # =========================
 def init_firebase():
     try:
-        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
+        FIREBASE_KEY_PATH = os.environ.get(
+            "FIREBASE_KEY_PATH", "/etc/secrets/firebase-key.json"
+        )
+
+        if not os.path.exists(FIREBASE_KEY_PATH):
+            print(f"Firebase key file not found at {FIREBASE_KEY_PATH}")
+            return None
+
+        # Initialize Firebase only if not already initialized
         if not firebase_admin._apps:
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
             firebase_app = firebase_admin.initialize_app(cred)
         else:
             firebase_app = firebase_admin.get_app()
+
+        print("Firestore ready: ✅")
         return firestore.client(app=firebase_app)
+
     except Exception as e:
         import traceback
 
         traceback.print_exc()
-        print("Error initializing Firebase:", e)
+        print("Firebase error:", e)
+        print("Firestore ready: ❌")
         return None
-
 
 db = init_firebase()
 
@@ -1034,4 +1045,7 @@ def ping():
 # MAIN
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Use Render’s port if available
+    port = int(os.environ.get("PORT", 5000))
+    # Disable debug in production
+    app.run(host="0.0.0.0", port=port, debug=False)
