@@ -80,7 +80,7 @@ def update_temp_ph():
         return jsonify({"status": "error", "message": "Firestore not initialized"}), 500
    
     try:
-        data = request.get_json() or {}
+       data = request.get_json(force=True, silent=False) or {}
         print("📡 RAW:", request.get_data(as_text=True))  
         print("📡 JSON:", data)                            
         
