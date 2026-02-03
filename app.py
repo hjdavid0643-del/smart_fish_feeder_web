@@ -62,6 +62,9 @@ def init_firebase():
         firebase_app = firebase_admin.initialize_app(cred)
         return firestore.client(app=firebase_app)
     except Exception as e:
+        print(f"Firebase error: {e}")  # ← ADD THIS LINE
+        return None                   # ← ADD THIS LINE
+
         print(f"Firebase error: {e}")
         return None
 
@@ -74,17 +77,34 @@ def to_float_or_none(value):
     except (TypeError, ValueError):
         return None
 
-@app.route("/update_temp_ph", methods=["POST"])  # ← KEEP THIS ONE ONLY
+@app.route("/update_temp_ph", methods=["POST"])
 def update_temp_ph():
     if db is None:
         return jsonify({"status": "error", "message": "Firestore not initialized"}), 500
     try:
-       data = request.get_json(force=True, silent=False) or {}
-        print("📡 RAW:", request.get_data(as_text=True))  
-        print("📡 JSON:", data)                            
-        
+        data = request.get_json() or {}  # ← ADD THIS MISSING LINE
         temperature = to_float_or_none(data.get("temperature"))
         ph = to_float_or_none(data.get("ph"))
+        
+        if temperature is None or ph is None:
+            return jsonify({
+                "status": "error", 
+                "message": f"Invalid data: temp={data.get('temperature')}, ph={data.get('ph')}"
+            }), 400
+
+        db.collection("devices").document("ESP32_001").set({
+            "temperature": temperature,
+            "ph": ph,
+            "updatedAt": datetime.utcnow()
+        }, merge=True)
+        
+        print(f"✅ SAVED: Temp={temperature}, pH={ph}")
+        return jsonify({"status": "success"}), 200
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
         
         if temperature is None or ph is None:
             return jsonify({
