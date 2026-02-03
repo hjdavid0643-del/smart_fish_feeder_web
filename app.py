@@ -78,7 +78,6 @@ def to_float_or_none(value):
 def update_temp_ph():
     if db is None:
         return jsonify({"status": "error", "message": "Firestore not initialized"}), 500
-   
     try:
        data = request.get_json(force=True, silent=False) or {}
         print("📡 RAW:", request.get_data(as_text=True))  
@@ -1035,9 +1034,35 @@ def apiultrasonicesp322():
 
 
 @app.route("/apicheckfeedcommand", methods=["GET"])
+@esp32_auth
 def apicheckfeedcommand():
     deviceid = request.args.get("deviceid", "ESP32_001")
-    return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
+    
+    
+    try:
+        device_doc = db.collection("devices").document(deviceid).get()
+        if not device_doc.exists:
+            return jsonify({"status": "error", "message": "Unknown device"}), 404
+            
+        # Check commands collection
+        cmd_query = (db.collection("commands")
+                    .where("deviceid", "==", deviceid)
+                    .order_by("timestamp", direction=firestore.Query.DESCENDING)
+                    .limit(1)
+                    .stream())
+        
+        command = "none"
+        for cmd_doc in cmd_query:
+            cmd_data = cmd_doc.to_dict()
+            command = cmd_data.get('action', 'none')
+            # Delete after reading
+            cmd_doc.reference.delete()
+            break
+            
+    except Exception as e:
+        print(f"Command check error: {e}")
+    
+    return jsonify({"status": "success", "deviceid": deviceid, "command": command}), 200
 
 
 # =========================
