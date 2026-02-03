@@ -25,9 +25,6 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 
 
-FIRESTORE_LOGIN_DISABLED = False
-
-# ADD THESE LINES:
 FIREBASE_KEY_PATH = "firebase-key.json"
 VALID_USERS = {
     "admin@example.com": "password123",
@@ -146,10 +143,7 @@ def normalize_turbidity(value):
 # =========================
 @app.route("/")
 def home():
-    
-   return redirect(url_for("login")) 
-
-
+    return redirect(url_for("login")) 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if FIRESTORE_LOGIN_DISABLED or os.environ.get("FIRESTORE_LOGIN_DISABLED", "0") == "1":
@@ -157,6 +151,11 @@ def login():
             "login.html",
             error="Login temporarily disabled. Please try again later.",
         )
+
+    # Handle GET (show login page) or already logged in
+    if "user" in session:
+        return redirect(url_for("dashboard"))
+    return render_template("login.html")
 
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
