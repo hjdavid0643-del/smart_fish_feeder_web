@@ -189,152 +189,84 @@ def register():
 @login_required
 def dashboard():
     if db is None:
-        return render_template(
-            "dashboard.html",
-            readings=[],
-            summary="Firestore not initialized on server",
-            alertcolor="gray",
-            timelabels=[],
-            tempvalues=[],
-            phvalues=[],
-            ammoniavalues=[],
-            turbidityvalues=[],
-            feederalert="Feeder status unavailable",
-            feederalertcolor="gray",
-            lowfeedalert=None,
-            lowfeedcolor="#ff7043",
-        )
+        return render_template("dashboard.html", readings=[], summary="Database not ready",
+            alertcolor="gray", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[], 
+            turbidityvalues=[], feederalert="Database unavailable", feederalertcolor="gray",
+            lowfeedalert=None, lowfeedcolor="#ff7043")
 
     try:
-        readings_ref = (
-            db.collection("devices")
-            .document("ESP32001")
-            .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
-        )
-        readings_cursor = readings_ref.stream()
-    except ResourceExhausted:
-        return render_template(
-            "dashboard.html",
-            readings=[],
-            summary="Database quota exceeded. Please try again later.",
-            alertcolor="gray",
-            timelabels=[],
-            tempvalues=[],
-            phvalues=[],
-            ammoniavalues=[],
-            turbidityvalues=[],
-            feederalert="Feeder status unavailable",
-            feederalertcolor="gray",
-            lowfeedalert=None,
-            lowfeedcolor="#ff7043",
-        )
-    except Exception:
-        return render_template(
-            "dashboard.html",
-            readings=[],
-            summary="Error loading data.",
-            alertcolor="gray",
-            timelabels=[],
-            tempvalues=[],
-            phvalues=[],
-            ammoniavalues=[],
-            turbidityvalues=[],
-            feederalert="Feeder status unavailable",
-            feederalertcolor="gray",
-            lowfeedalert=None,
-            lowfeedcolor="#ff7043",
-        )
+        # === RTDB READINGS (ESP32 writes here) ===
+        snapshot = db_rtdb.child("devices").child("ESP32001").child("readings").limit_to_last(50).get()
+        rtdb_data = snapshot.val() or {}
+        
+        data = []
+        if isinstance(rtdb_data, dict):
+            for key, reading in list(rtdb_data.items())[-50:]:
+                data.append({
+                    "temperature": reading.get("temperature"),
+                    "ph": reading.get("ph"),
+                    "ammonia": reading.get("ammonia"),
+                    "turbidity": normalize_turbidity(reading.get("turbidity")),
+                    "createdAt": reading.get("createdAt", "unknown")
+                })
+        
+        # === SUMMARY ALERTS ===
+        summary = "🟢 All systems normal."
+        alertcolor = "green"
+        if data and data[-1].get("turbidity", 0) > 100:
+            summary = "⚠️ Water too cloudy! (Danger)"
+            alertcolor = "gold"
+        elif data and data[-1].get("turbidity", 0) > 50:
+            summary = "⚠️ Water getting cloudy."
+            alertcolor = "orange"
 
-    data = []
-    for r in readings_cursor:
-        docdata = r.to_dict() or {}
-        created = docdata.get("createdAt")
-        if isinstance(created, datetime):
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            created_str = created
-        turb = normalize_turbidity(docdata.get("turbidity"))
-        data.append(
-            {
-                "temperature": docdata.get("temperature"),
-                "ph": docdata.get("ph"),
-                "ammonia": docdata.get("ammonia"),
-                "turbidity": turb,
-                "createdAt": created_str,
-            }
-        )
+        # === FEEDER STATUS (Firestore) ===
+        feederalert = "Feeder OFF"
+        feederalertcolor = "lightcoral"
+        try:
+            devicedoc = db.collection("devices").document("ESP32001").get()
+            if devicedoc.exists:
+                d = devicedoc.to_dict() or {}
+                if d.get("feederstatus") == "on" and d.get("feederspeed", 0) > 0:
+                    feederalert = f"🐟 Feeding at {d.get('feederspeed')}%"
+                    feederalertcolor = "limegreen"
+        except:
+            pass
 
-    data = list(reversed(data))
+        # === LOW FEED (ESP32002) ===
+        lowfeedalert = None
+        try:
+            hopperdoc = db.collection("devices").document("ESP32002").get()
+            if hopperdoc.exists:
+                hdata = hopperdoc.to_dict() or {}
+                levelpercent = hdata.get("feedlevelpercent")
+                if levelpercent and levelpercent < 20:
+                    lowfeedalert = f"⚠️ Low feed: {levelpercent:.1f}% - REFILL!"
+        except:
+            pass
 
-    summary = "All systems normal."
-    alertcolor = "green"
-    if data:
-        last = data[-1]
-        last_turbidity = last.get("turbidity")
-        if last_turbidity is not None:
-            if last_turbidity > 100:
-                summary = "Water is too cloudy! Danger"
-                alertcolor = "gold"
-            elif last_turbidity > 50:
-                summary = "Water is getting cloudy."
-                alertcolor = "orange"
+        # === CHARTS ===
+        timelabels = [r["createdAt"] for r in data]
+        tempvalues = [r["temperature"] or 0 for r in data]
+        phvalues = [r["ph"] or 0 for r in data]
+        ammoniavalues = [r["ammonia"] or 0 for r in data]
+        turbidityvalues = [r["turbidity"] or 0 for r in data]
+        latest10 = data[-10:] if len(data) >= 10 else data
 
-    feederalert = "Feeder is currently OFF"
-    feederalertcolor = "lightcoral"
-    try:
-        devicedoc = db.collection("devices").document("ESP32001").get()
-        if devicedoc.exists:
-            d = devicedoc.to_dict() or {}
-            feederstatus = d.get("feederstatus", "off")
-            feederspeed = d.get("feederspeed", 0)
-            if feederstatus == "on" and feederspeed and feederspeed > 0:
-                feederalert = f"Feeding in progress at {feederspeed}% speed"
-                feederalertcolor = "limegreen"
-    except Exception:
-        feederalert = "Feeder status unavailable"
-        feederalertcolor = "gray"
+        return render_template("dashboard.html",
+            readings=latest10, summary=summary, alertcolor=alertcolor,
+            timelabels=timelabels, tempvalues=tempvalues, phvalues=phvalues,
+            ammoniavalues=ammoniavalues, turbidityvalues=turbidityvalues,
+            feederalert=feederalert, feederalertcolor=feederalertcolor,
+            lowfeedalert=lowfeedalert, lowfeedcolor="#ff7043")
+            
+    except Exception as e:
+        return render_template("dashboard.html", readings=[], summary=f"Error: {str(e)}",
+            alertcolor="red", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[],
+            turbidityvalues=[], feederalert="Error", feederalertcolor="red",
+            lowfeedalert=None, lowfeedcolor="#ff7043")
 
-    lowfeedalert = None
-    lowfeedcolor = "#ff7043"
-    try:
-        hopperdoc = db.collection("devices").document("ESP32002").get()
-        if hopperdoc.exists:
-            hdata = hopperdoc.to_dict() or {}
-            levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
-            if levelpercent is not None and levelpercent < 20:
-                lowfeedalert = (
-                    f"Low feed level ({levelpercent:.1f}%). Please refill the hopper."
-                )
-    except Exception:
-        pass
-
-    timelabels = [r["createdAt"] for r in data]
-    tempvalues = [r["temperature"] for r in data]
-    phvalues = [r["ph"] for r in data]
-    ammoniavalues = [r["ammonia"] for r in data]
-    turbidityvalues = [r["turbidity"] for r in data]
-
-    latest10 = data[-10:]
-
-    return render_template(
-        "dashboard.html",
-        readings=latest10,
-        summary=summary,
-        alertcolor=alertcolor,
-        timelabels=timelabels,
-        tempvalues=tempvalues,
-        phvalues=phvalues,
-        ammoniavalues=ammoniavalues,
-        turbidityvalues=turbidityvalues,
-        feederalert=feederalert,
-        feederalertcolor=feederalertcolor,
-        lowfeedalert=lowfeedalert,
-        lowfeedcolor=lowfeedcolor,
-    )
-
-
+    
 # =========================
 # MOSFET PAGE
 # =========================
@@ -378,9 +310,10 @@ def mosfet():
 # =========================
 # FEEDING CONTROL PAGE
 # =========================
-@app.route("/controlfeeding")
+@app.route("/control_feeding")
 @login_required
 def controlfeedingpage():
+
     if db is None:
         return render_template(
             "control.html",
