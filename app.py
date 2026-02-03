@@ -1,3 +1,9 @@
+import os
+import io
+import json  # <--- ADDED: Required for cloud credentials
+from functools import wraps
+from datetime import datetime, timedelta
+
 from flask import (
     Flask,
     render_template,
@@ -10,11 +16,7 @@ from flask import (
 )
 from flask_cors import CORS
 import firebase_admin
-from firebase_admin import credentials, firestore
-from functools import wraps
-from datetime import datetime, timedelta
-import os
-import io
+from firebase_admin import credentials, firestore, db as rtdb
 from google.api_core.exceptions import ResourceExhausted
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -33,23 +35,50 @@ app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
 # =========================
-# FIREBASE DUAL INIT 
+# FIREBASE DUAL INIT (FIXED)
 # =========================
-from firebase_admin import credentials, firestore, db as rtdb
-
 def init_firebase():
+    """
+    Tries to initialize Firebase from an Environment Variable (Best for Render),
+    then falls back to looking for a file (Best for Local).
+    """
     try:
-        FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH", "/etc/secrets/firebase-key.json")
-        if not os.path.exists(FIREBASE_KEY_PATH):
-            print(f"Firebase key missing: {FIREBASE_KEY_PATH}")
-            return None, None
+        cred = None
+        
+        # 1. Try loading from Environment Variable (The "Cloud Friendly" way)
+        # You must add FIREBASE_CREDENTIALS_JSON to Render Environment Variables
+        env_credentials = os.environ.get("FIREBASE_CREDENTIALS_JSON")
+        
+        if env_credentials:
+            print("Attempting to load credentials from Environment Variable...")
+            try:
+                # Parse the string back into a JSON dictionary
+                cred_dict = json.loads(env_credentials)
+                cred = credentials.Certificate(cred_dict)
+                print("✅ Credentials loaded from Environment Variable.")
+            except json.JSONDecodeError as e:
+                print(f"❌ Error decoding JSON from environment variable: {e}")
 
+        # 2. If no Env Var, try loading from File (The "Local" way)
+        if cred is None:
+            # Default to local folder, or specific Render path if needed
+            FIREBASE_KEY_PATH = os.environ.get("FIREBASE_KEY_PATH", "firebase-key.json")
+            
+            if os.path.exists(FIREBASE_KEY_PATH):
+                print(f"Loading credentials from file: {FIREBASE_KEY_PATH}")
+                cred = credentials.Certificate(FIREBASE_KEY_PATH)
+            else:
+                # If we get here, we found NOTHING.
+                print(f"❌ CRITICAL ERROR: No Firebase credentials found.")
+                print("   - Check if FIREBASE_CREDENTIALS_JSON env var is set.")
+                print(f"   - Or check if file exists at: {FIREBASE_KEY_PATH}")
+                return None, None
+
+        # 3. Initialize App
         if not firebase_admin._apps:
-            cred = credentials.Certificate(FIREBASE_KEY_PATH)
             firebase_app = firebase_admin.initialize_app(cred, {
-                # Line 62 - REPLACE with this EXACT URL:
+                # Ensure this URL matches your Firebase Console exactly
                'databaseURL': 'https://authentication--fish-feeder-default-rtdb.asia-southeast1.firebasedatabase.app/'
-
             })
         else:
             firebase_app = firebase_admin.get_app()
@@ -68,13 +97,12 @@ def init_firebase():
 # 🔥 CRITICAL: These 3 lines must be together
 db_firestore, db_rtdb = init_firebase()  # 1. Initialize
 db = db_firestore                        # 2. Bridge old code
-                                         # 3. Now /testrtdb works
 
-@app.route("/testrtdb")  # Move here
+@app.route("/testrtdb")
 def testrtdb():
     try:
         if db_rtdb is None:
-            return jsonify({"error": "RTDB not ready"}), 500
+            return jsonify({"error": "RTDB not ready - Credentials missing"}), 500
         snapshot = db_rtdb.child("devices").child("ESP32001").child("readings").limit_to_last(1).get()
         return jsonify({"status": "ok", "rtdb_data": snapshot.val()}), 200
     except Exception as e:
@@ -134,13 +162,11 @@ def home():
 # =========================
 # AUTH ROUTES (simple session auth)
 # =========================
-# Hard‑coded test user; replace with real user storage later.
 VALID_USERS = {
     "admin@example.com": "admin123",
     "worker@example.com": "worker123",
     "hjdavid0643@iskwela.psau.edu.ph": "0123456789",
 }
-
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -189,19 +215,24 @@ def register():
 @login_required
 def dashboard():
     if db is None:
-        return render_template("dashboard.html", readings=[], summary="Database not ready",
-            alertcolor="gray", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[], 
-            turbidityvalues=[], feederalert="Database unavailable", feederalertcolor="gray",
+        return render_template("dashboard.html", readings=[], summary="Database Connection Failed",
+            alertcolor="red", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[], 
+            turbidityvalues=[], feederalert="Check Logs", feederalertcolor="gray",
             lowfeedalert=None, lowfeedcolor="#ff7043")
 
     try:
         # === RTDB READINGS (ESP32 writes here) ===
-        snapshot = db_rtdb.child("devices").child("ESP32001").child("readings").limit_to_last(50).get()
-        rtdb_data = snapshot.val() or {}
+        if db_rtdb:
+            snapshot = db_rtdb.child("devices").child("ESP32001").child("readings").limit_to_last(50).get()
+            rtdb_data = snapshot.val() or {}
+        else:
+            rtdb_data = {}
         
         data = []
         if isinstance(rtdb_data, dict):
-            for key, reading in list(rtdb_data.items())[-50:]:
+            # Sort chronologically
+            sorted_items = sorted(rtdb_data.items())
+            for key, reading in sorted_items[-50:]:
                 data.append({
                     "temperature": reading.get("temperature"),
                     "ph": reading.get("ph"),
@@ -261,6 +292,7 @@ def dashboard():
             lowfeedalert=lowfeedalert, lowfeedcolor="#ff7043")
             
     except Exception as e:
+        print(f"Dashboard Error: {e}")
         return render_template("dashboard.html", readings=[], summary=f"Error: {str(e)}",
             alertcolor="red", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[],
             turbidityvalues=[], feederalert="Error", feederalertcolor="red",
@@ -276,35 +308,39 @@ def mosfet():
     if db is None:
         return render_template("mosfet.html", readings=[])
 
-    readings_ref = (
-        db.collection("devices")
-        .document("ESP32001")
-        .collection("readings")
-        .order_by("createdAt", direction=firestore.Query.DESCENDING)
-        .limit(50)
-    )
-    readings_cursor = readings_ref.stream()
-
-    data = []
-    for r in readings_cursor:
-        docdata = r.to_dict() or {}
-        created = docdata.get("createdAt")
-        if isinstance(created, datetime):
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            created_str = created
-        turb = normalize_turbidity(docdata.get("turbidity"))
-        data.append(
-            {
-                "temperature": docdata.get("temperature"),
-                "ph": docdata.get("ph"),
-                "ammonia": docdata.get("ammonia"),
-                "turbidity": turb,
-                "createdAt": created_str,
-            }
+    try:
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
         )
+        readings_cursor = readings_ref.stream()
 
-    return render_template("mosfet.html", readings=data)
+        data = []
+        for r in readings_cursor:
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            if isinstance(created, datetime):
+                created_str = created.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                created_str = created
+            turb = normalize_turbidity(docdata.get("turbidity"))
+            data.append(
+                {
+                    "temperature": docdata.get("temperature"),
+                    "ph": docdata.get("ph"),
+                    "ammonia": docdata.get("ammonia"),
+                    "turbidity": turb,
+                    "createdAt": created_str,
+                }
+            )
+
+        return render_template("mosfet.html", readings=data)
+    except Exception as e:
+        print(f"Mosfet Error: {e}")
+        return render_template("mosfet.html", readings=[])
 
 
 # =========================
@@ -966,33 +1002,5 @@ def apicheckfeedcommand():
     deviceid = request.args.get("deviceid", "ESP32001")
     return jsonify({"status": "success", "deviceid": deviceid, "command": "none"}), 200
 
-
-# =========================
-# HEALTH CHECK
-# =========================
-@app.route("/testfirestore")
-def testfirestore():
-    try:
-        if db is None:
-            return jsonify(
-                {"status": "error", "message": "Firestore not initialized on server"}
-            ), 500
-        doc = db.collection("devices").document("ESP32001").get()
-        return jsonify({"status": "ok", "exists": doc.exists}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route("/ping", methods=["GET"])
-def ping():
-    return jsonify({"status": "ok", "message": "Server reachable"}), 200
-
-
-# =========================
-# MAIN
-# =========================
 if __name__ == "__main__":
-    # Use Render’s port if available
-    port = int(os.environ.get("PORT", 5000))
-    # Disable debug in production
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
