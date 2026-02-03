@@ -35,7 +35,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
 # =========================
-# FIREBASE DUAL INIT (FIXED)
+# FIREBASE DUAL INIT (FIXED FOR RENDER)
 # =========================
 def init_firebase():
     """
@@ -70,7 +70,7 @@ def init_firebase():
             else:
                 # If we get here, we found NOTHING.
                 print(f"❌ CRITICAL ERROR: No Firebase credentials found.")
-                print("   - Check if FIREBASE_CREDENTIALS_JSON env var is set.")
+                print("   - Check if FIREBASE_CREDENTIALS_JSON env var is set in Render.")
                 print(f"   - Or check if file exists at: {FIREBASE_KEY_PATH}")
                 return None, None
 
@@ -91,7 +91,7 @@ def init_firebase():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print("Firebase error:", e)
+        print("Firebase Initialization Error:", e)
         return None, None
 
 # 🔥 CRITICAL: These 3 lines must be together
@@ -214,10 +214,12 @@ def register():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Graceful failure check: if DB failed to load, show dashboard but with empty data
+    # This prevents the 500 error page from showing up
     if db is None:
-        return render_template("dashboard.html", readings=[], summary="Database Connection Failed",
+        return render_template("dashboard.html", readings=[], summary="Database Connection Failed - Check Logs",
             alertcolor="red", timelabels=[], tempvalues=[], phvalues=[], ammoniavalues=[], 
-            turbidityvalues=[], feederalert="Check Logs", feederalertcolor="gray",
+            turbidityvalues=[], feederalert="System Offline", feederalertcolor="gray",
             lowfeedalert=None, lowfeedcolor="#ff7043")
 
     try:
@@ -349,7 +351,6 @@ def mosfet():
 @app.route("/control_feeding")
 @login_required
 def controlfeedingpage():
-
     if db is None:
         return render_template(
             "control.html",
