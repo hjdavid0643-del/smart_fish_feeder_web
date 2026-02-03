@@ -33,8 +33,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
-FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
-
 # =========================
 # FIREBASE / FIRESTORE INIT
 # =========================
@@ -151,9 +149,9 @@ def home():
 # =========================
 # AUTH ROUTES (simple session auth)
 # =========================
-# Hard‑coded test user; replace with real user storage later.
+import os
 VALID_USERS = {
-    "hjdavid0643@iskwela.psau.edu.ph": "0123456789",
+    os.environ.get("ADMIN_EMAIL"): os.environ.get("ADMIN_PASSWORD")
 }
 
 
