@@ -33,7 +33,8 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key")
 CORS(app)
 
-FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
+FIREBASE_KEY_PATH = "firebase-service-account.json"  # ✅ CORRECT!
+
 
 # =========================
 # FIREBASE / FIRESTORE INIT
