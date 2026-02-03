@@ -38,20 +38,27 @@ CORS(app)
 # =========================
 def init_firebase():
     try:
-        FIREBASE_KEY_PATH = "/etc/secrets/authentication-fish-feeder-firebase-adminsdk-fbsvc-84079a47f4.json"
-        if not firebase_admin._apps:
+        # Render env var (PRODUCTION)
+        key_json = os.environ.get('FIREBASE_KEY_JSON')
+        if key_json:
+            cred = credentials.Certificate(json.loads(key_json))
+            print("✅ Firebase: Render success")
+        # Local fallback (DEVELOPMENT)
+        elif os.path.exists(FIREBASE_KEY_PATH):
             cred = credentials.Certificate(FIREBASE_KEY_PATH)
-            firebase_app = firebase_admin.initialize_app(cred)
+            print("✅ Firebase: Local success")
         else:
-            firebase_app = firebase_admin.get_app()
+            print("❌ No Firebase credentials")
+            return None
+            
+        firebase_app = firebase_admin.initialize_app(cred)
         return firestore.client(app=firebase_app)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print("Error initializing Firebase:", e)
+        print(f"Firebase error: {e}")
         return None
 
 db = init_firebase()
+print(f"Firestore ready: {'✅' if db else '❌'}")
 
 
 
