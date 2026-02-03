@@ -24,6 +24,17 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 
+
+FIRESTORE_LOGIN_DISABLED = False
+
+# ADD THESE LINES:
+FIREBASE_KEY_PATH = "firebase-key.json"
+VALID_USERS = {
+    "admin@example.com": "password123",
+    "user@example.com": "password456"
+}
+
+
 # =========================
 # CONFIG
 # =========================
@@ -60,8 +71,43 @@ def init_firebase():
 db = init_firebase()
 print(f"Firestore ready: {'✅' if db else '❌'}")
 
+def to_float_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
+@app.route("/update_temp_ph", methods=["POST"])  # ← KEEP THIS ONE ONLY
+def update_temp_ph():
+    if db is None:
+        return jsonify({"status": "error", "message": "Firestore not initialized"}), 500
+   
+    try:
+        data = request.get_json() or {}
+        print("📡 RAW:", request.get_data(as_text=True))  
+        print("📡 JSON:", data)                            
+        
+        temperature = to_float_or_none(data.get("temperature"))
+        ph = to_float_or_none(data.get("ph"))
+        
+        if temperature is None or ph is None:
+            return jsonify({
+                "status": "error", 
+                "message": f"Got temp={data.get('temperature')}, ph={data.get('ph')}"
+            }), 400
 
+        db.collection("devices").document("ESP32_001").set({
+            "temperature": temperature,
+            "ph": ph,
+            "updatedAt": datetime.utcnow()
+        }, merge=True)
+        
+        print(f"✅ SAVED: Temp={temperature}, pH={ph}")
+        return jsonify({"status": "success"}), 200
+        
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # =========================
 # HELPERS
@@ -93,46 +139,7 @@ def normalize_turbidity(value):
         v = 0.0
     if v > 3000:
         v = 3000.0
-    return v
-
-
-def to_float_or_none(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-
-
-@app.route("/update_temp_ph", methods=["POST"])
-def update_temp_ph():
-    if db is None:
-        return jsonify(
-            {"status": "error", "message": "Firestore not initialized on server"}
-        ), 500
-
-    try:
-        data = request.get_json() or {}
-        temperature = to_float_or_none(data.get("temperature"))
-        ph = to_float_or_none(data.get("ph"))
-
-        if temperature is None or ph is None:
-            return jsonify(
-                {"status": "error", "message": "temperature and ph required"}
-            ), 400
-
-        db.collection("devices").document("ESP32_001").set(
-            {
-                "temperature": temperature,
-                "ph": ph,
-                "updatedAt": datetime.utcnow(),
-            },
-            merge=True,
-        )
-        return jsonify({"status": "success"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return v                                     
 
 # =========================
 # BASIC ROUTES
@@ -141,19 +148,6 @@ def update_temp_ph():
 def home():
     
    return redirect(url_for("login")) 
-
-
-
-
-
-# =========================
-# AUTH ROUTES (simple session auth)
-# =========================
-import os
-VALID_USERS = {
-    os.environ.get("ADMIN_EMAIL"): os.environ.get("ADMIN_PASSWORD")
-}
-
 
 
 @app.route("/login", methods=["GET", "POST"])
