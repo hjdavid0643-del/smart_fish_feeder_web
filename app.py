@@ -222,112 +222,89 @@ def logout():
 @login_required
 def dashboard():
     if db is None:
-        return render_template(
-            "dashboard.html",
-            readings=[],
-            summary="Firestore not initialized on server",
-            alertcolor="gray",
-            timelabels=[],
-            tempvalues=[],
-            phvalues=[],
-            ammoniavalues=[],
-            turbidityvalues=[],
-            feederalert="Feeder status unavailable",
-            feederalertcolor="gray",
-            lowfeedalert=None,
-            lowfeedcolor="#ff7043",
-        )
+        return render_template("dashboard.html", readings=[], summary="Database Error", alertcolor="gray")
 
-    # SAFE: Max 15 readings, timeout protection, single device query
+    # Initialize default values to prevent "Undefined" errors in HTML
     readings = []
-    summary = "Dashboard loading..."
-    alertcolor = "blue"
-    feederalert = "Status unavailable"
-    feederalertcolor = "gray"
-    
+    summary = "All systems normal."
+    alertcolor = "green"
+    feederalert = "Feeder is currently OFF"
+    feederalertcolor = "lightcoral"
+    lowfeedalert = None
+
     try:
-        # 1. QUICK device status (1 read operation)
-        devicedoc = db.collection("devices").document("ESP32001").get()
+        # 1. Fetch Primary Device Data (ESP32001)
+        device_ref = db.collection("devices").document("ESP32001")
+        devicedoc = device_ref.get(timeout=10) # Added timeout
+        
         if devicedoc.exists:
             d = devicedoc.to_dict() or {}
             feederstatus = d.get("feederstatus", "off")
             feederspeed = d.get("feederspeed", 0)
             if feederstatus == "on" and feederspeed > 0:
-                feederalert = f"Feeding at {feederspeed}%"
+                feederalert = f"Feeding in progress at {feederspeed}% speed"
                 feederalertcolor = "limegreen"
-            else:
-                feederalert = "Feeder OFF"
-                feederalertcolor = "lightcoral"
 
-        # 2. TINY readings query (max 15 docs)
-        readings_ref = (
-            db.collection("devices")
-            .document("ESP32001")
-            .collection("readings")
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(15)  # << 50! Prevents quota exhaustion
-        )
+        # 2. Fetch Latest 15 Readings
+        readings_ref = device_ref.collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(15)
         
-        count = 0
-        for r in readings_ref.stream():
-            if count >= 12:  # HARD LIMIT
-                break
+        for r in readings_ref.stream(timeout=10):
             docdata = r.to_dict() or {}
             created = docdata.get("createdAt")
             created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else str(created)
+            
             readings.append({
-                "temperature": docdata.get("temperature"),
-                "ph": docdata.get("ph"),
-                "ammonia": docdata.get("ammonia"),
+                "temperature": docdata.get("temperature", 0),
+                "ph": docdata.get("ph", 0),
+                "ammonia": docdata.get("ammonia", 0),
                 "turbidity": normalize_turbidity(docdata.get("turbidity")),
-                "createdAt": created_str,
+                "createdAt": created_str
             })
-            count += 1
 
-        # 3. Simple analysis (no extra queries)
+        # 3. Analyze Data
         if readings:
-            data = list(reversed(readings))
-            last = data[-1]
-            last_turbidity = last.get("turbidity")
-            if last_turbidity > 100:
-                summary = "🚨 High turbidity!"
+            last_turb = readings[0].get("turbidity") # Use the first one (latest)
+            if last_turb and last_turb > 100:
+                summary = ""🟢 All systems normal.""
+                alertcolor =  "green"
+
+            elif last_turb and last_turb > 50:
+                summary = "Water is getting cloudy."
                 alertcolor = "orange"
-            elif last_turbidity > 50:
-                summary = "⚠️ Water cloudy"
-                alertcolor = "gold"
-            else:
-                summary = "✅ All normal"
-                alertcolor = "green"
+
+        # 4. Fetch Hopper Status (ESP32002) - Wrapped in its own try to prevent total crash
+        try:
+            hopperdoc = db.collection("devices").document("ESP32002").get(timeout=5)
+            if hopperdoc.exists:
+                hdata = hopperdoc.to_dict() or {}
+                level = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
+                if level is not None and level < 20:
+                    lowfeedalert = f"Low feed level ({level:.1f}%). Please refill."
+        except Exception:
+            print("Non-fatal: ESP32002 not found.")
 
     except Exception as e:
-        print(f"Dashboard error (non-fatal): {e}")
-        summary = "Partial data loaded"
+        print(f"CRITICAL DASHBOARD ERROR: {e}")
+        summary = "Error connecting to database."
         alertcolor = "gray"
 
-    # 4. Safe chart data (never fails)
-    data = list(reversed(readings))[:50]  # Max 50 points
-    timelabels = [r["createdAt"] for r in data]
-    tempvalues = [r["temperature"] or 0 for r in data]
-    phvalues = [r["ph"] or 0 for r in data]
-    ammoniavalues = [r["ammonia"] or 0 for r in data]
-    turbidityvalues = [r["turbidity"] or 0 for r in data]
-
+    # Prepare Chart Data
+    chart_data = list(reversed(readings))
     return render_template(
         "dashboard.html",
-        readings=data[-10:],  # Latest 10 for table
+        readings=readings[:10], # Latest 10 for table
         summary=summary,
         alertcolor=alertcolor,
-        timelabels=timelabels,
-        tempvalues=tempvalues,
-        phvalues=phvalues,
-        ammoniavalues=ammoniavalues,
-        turbidityvalues=turbidityvalues,
+        timelabels=[r["createdAt"] for r in chart_data],
+        tempvalues=[r["temperature"] for r in chart_data],
+        phvalues=[r["ph"] for r in chart_data],
+        ammoniavalues=[r["ammonia"] for r in chart_data],
+        turbidityvalues=[r["turbidity"] for r in chart_data],
         feederalert=feederalert,
         feederalertcolor=feederalertcolor,
-        lowfeedalert=None,
-        lowfeedcolor="#ff7043",
+        lowfeedalert=lowfeedalert,
+        lowfeedcolor="#ff7043"
     )
-
 
     try:
         readings_ref = (
