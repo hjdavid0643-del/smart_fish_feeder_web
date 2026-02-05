@@ -215,11 +215,6 @@ def logout():
     return redirect(url_for("login"))
 
 
-@app.route("/register")
-def register():
-    return "Registration is managed separately (not implemented in backend)."
-
-
 # =========================
 # DASHBOARD
 # =========================
@@ -242,6 +237,97 @@ def dashboard():
             lowfeedalert=None,
             lowfeedcolor="#ff7043",
         )
+
+    # SAFE: Max 15 readings, timeout protection, single device query
+    readings = []
+    summary = "Dashboard loading..."
+    alertcolor = "blue"
+    feederalert = "Status unavailable"
+    feederalertcolor = "gray"
+    
+    try:
+        # 1. QUICK device status (1 read operation)
+        devicedoc = db.collection("devices").document("ESP32001").get()
+        if devicedoc.exists:
+            d = devicedoc.to_dict() or {}
+            feederstatus = d.get("feederstatus", "off")
+            feederspeed = d.get("feederspeed", 0)
+            if feederstatus == "on" and feederspeed > 0:
+                feederalert = f"Feeding at {feederspeed}%"
+                feederalertcolor = "limegreen"
+            else:
+                feederalert = "Feeder OFF"
+                feederalertcolor = "lightcoral"
+
+        # 2. TINY readings query (max 15 docs)
+        readings_ref = (
+            db.collection("devices")
+            .document("ESP32001")
+            .collection("readings")
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(15)  # << 50! Prevents quota exhaustion
+        )
+        
+        count = 0
+        for r in readings_ref.stream():
+            if count >= 12:  # HARD LIMIT
+                break
+            docdata = r.to_dict() or {}
+            created = docdata.get("createdAt")
+            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else str(created)
+            readings.append({
+                "temperature": docdata.get("temperature"),
+                "ph": docdata.get("ph"),
+                "ammonia": docdata.get("ammonia"),
+                "turbidity": normalize_turbidity(docdata.get("turbidity")),
+                "createdAt": created_str,
+            })
+            count += 1
+
+        # 3. Simple analysis (no extra queries)
+        if readings:
+            data = list(reversed(readings))
+            last = data[-1]
+            last_turbidity = last.get("turbidity")
+            if last_turbidity > 100:
+                summary = "🚨 High turbidity!"
+                alertcolor = "orange"
+            elif last_turbidity > 50:
+                summary = "⚠️ Water cloudy"
+                alertcolor = "gold"
+            else:
+                summary = "✅ All normal"
+                alertcolor = "green"
+
+    except Exception as e:
+        print(f"Dashboard error (non-fatal): {e}")
+        summary = "Partial data loaded"
+        alertcolor = "gray"
+
+    # 4. Safe chart data (never fails)
+    data = list(reversed(readings))[:50]  # Max 50 points
+    timelabels = [r["createdAt"] for r in data]
+    tempvalues = [r["temperature"] or 0 for r in data]
+    phvalues = [r["ph"] or 0 for r in data]
+    ammoniavalues = [r["ammonia"] or 0 for r in data]
+    turbidityvalues = [r["turbidity"] or 0 for r in data]
+
+    return render_template(
+        "dashboard.html",
+        readings=data[-10:],  # Latest 10 for table
+        summary=summary,
+        alertcolor=alertcolor,
+        timelabels=timelabels,
+        tempvalues=tempvalues,
+        phvalues=phvalues,
+        ammoniavalues=ammoniavalues,
+        turbidityvalues=turbidityvalues,
+        feederalert=feederalert,
+        feederalertcolor=feederalertcolor,
+        lowfeedalert=None,
+        lowfeedcolor="#ff7043",
+    )
+
 
     try:
         readings_ref = (
