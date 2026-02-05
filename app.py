@@ -265,7 +265,7 @@ def dashboard():
         if readings:
             last_turb = readings[0].get("turbidity") # Use the first one (latest)
             if last_turb and last_turb > 100:
-                summary = ""🟢 All systems normal.""
+                summary = "🟢 All systems normal."
                 alertcolor =  "green"
 
             elif last_turb and last_turb > 50:
