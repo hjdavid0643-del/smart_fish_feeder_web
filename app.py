@@ -224,75 +224,81 @@ def dashboard():
     if db is None:
         return render_template("dashboard.html", readings=[], summary="Database Error", alertcolor="gray")
 
-    # Initialize default values to prevent "Undefined" errors in HTML
+    # 1. Initialize Defaults
     readings = []
-    summary = "All systems normal."
+    summary = "🟢 All systems normal."
     alertcolor = "green"
     feederalert = "Feeder is currently OFF"
     feederalertcolor = "lightcoral"
     lowfeedalert = None
 
     try:
-        # 1. Fetch Primary Device Data (ESP32001)
+        # 2. Fetch Primary Device & Feeder Status (ESP32001)
         device_ref = db.collection("devices").document("ESP32001")
-        devicedoc = device_ref.get(timeout=10) # Added timeout
+        devicedoc = device_ref.get(timeout=10)
         
         if devicedoc.exists:
             d = devicedoc.to_dict() or {}
-            feederstatus = d.get("feederstatus", "off")
-            feederspeed = d.get("feederspeed", 0)
-            if feederstatus == "on" and feederspeed > 0:
-                feederalert = f"Feeding in progress at {feederspeed}% speed"
+            if d.get("feederstatus") == "on":
+                speed = d.get("feederspeed", 0)
+                feederalert = f"Feeding in progress at {speed}% speed"
                 feederalertcolor = "limegreen"
 
-        # 2. Fetch Latest 15 Readings
-        readings_ref = device_ref.collection("readings").order_by("createdAt", direction=firestore.Query.DESCENDING).limit(15)
+        # 3. Fetch Latest 15 Readings
+        # Limit to 15 to stay within Firestore free tier quotas
+        readings_ref = device_ref.collection("readings")\
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)\
+            .limit(15)
         
         for r in readings_ref.stream(timeout=10):
             docdata = r.to_dict() or {}
             created = docdata.get("createdAt")
-            created_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else str(created)
+            c_str = created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else str(created)
             
             readings.append({
                 "temperature": docdata.get("temperature", 0),
                 "ph": docdata.get("ph", 0),
                 "ammonia": docdata.get("ammonia", 0),
                 "turbidity": normalize_turbidity(docdata.get("turbidity")),
-                "createdAt": created_str
+                "createdAt": c_str
             })
 
-        # 3. Analyze Data
+        # 4. Analyze Latest Water Quality
         if readings:
-            last_turb = readings[0].get("turbidity") # Use the first one (latest)
-            if last_turb and last_turb > 100:
-                summary = "🟢 All systems normal."
-                alertcolor =  "green"
-
-            elif last_turb and last_turb > 50:
-                summary = "Water is getting cloudy."
+            latest = readings[0]
+            turb = latest.get("turbidity") or 0
+            if turb > 100:
+                summary = "❌ Water is too cloudy! Danger."
+                alertcolor = "red"
+            elif turb > 50:
+                summary = "⚠️ Water is getting cloudy."
                 alertcolor = "orange"
 
-        # 4. Fetch Hopper Status (ESP32002) - Wrapped in its own try to prevent total crash
+        # 5. Fetch Hopper Level (ESP32002)
         try:
-            hopperdoc = db.collection("devices").document("ESP32002").get(timeout=5)
-            if hopperdoc.exists:
-                hdata = hopperdoc.to_dict() or {}
-                level = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
+            hopper = db.collection("devices").document("ESP32002").get(timeout=5)
+            if hopper.exists:
+                h_data = hopper.to_dict() or {}
+                level = h_data.get("feedlevelpercent") or h_data.get("waterlevelpercent")
                 if level is not None and level < 20:
                     lowfeedalert = f"Low feed level ({level:.1f}%). Please refill."
         except Exception:
-            print("Non-fatal: ESP32002 not found.")
+            print("Non-fatal: ESP32002 (Hopper) currently offline.")
 
+    except ResourceExhausted:
+        summary = "Database quota exceeded. Please try again later."
+        alertcolor = "gray"
     except Exception as e:
         print(f"CRITICAL DASHBOARD ERROR: {e}")
         summary = "Error connecting to database."
         alertcolor = "gray"
 
-    # Prepare Chart Data
+    # Prepare data for Chart.js (Chart needs Oldest -> Newest)
     chart_data = list(reversed(readings))
+
     return render_template(
         "dashboard.html",
-        readings=readings[:10], # Latest 10 for table
+        readings=readings[:10],  # Table shows latest 10
         summary=summary,
         alertcolor=alertcolor,
         timelabels=[r["createdAt"] for r in chart_data],
@@ -305,7 +311,6 @@ def dashboard():
         lowfeedalert=lowfeedalert,
         lowfeedcolor="#ff7043"
     )
-
     try:
         readings_ref = (
             db.collection("devices")
