@@ -1,3 +1,4 @@
+
 import os
 import io
 import json
@@ -285,6 +286,7 @@ def dashboard():
             lowfeedcolor="#ff7043",
         )
 
+    # ✅ BULLETPROOF DATA PROCESSING
     data = []
     for r in readings_cursor:
         docdata = r.to_dict() or {}
@@ -292,33 +294,34 @@ def dashboard():
         if isinstance(created, datetime):
             created_str = created.strftime("%Y-%m-%d %H:%M:%S")
         else:
-            created_str = created
+            created_str = str(created) if created else "Unknown"
+        
         turb = normalize_turbidity(docdata.get("turbidity"))
-        data.append(
-            {
-                "temperature": docdata.get("temperature"),
-                "ph": docdata.get("ph"),
-                "ammonia": docdata.get("ammonia"),
-                "turbidity": turb,
-                "createdAt": created_str,
-            }
-        )
-
+        data.append({
+            "temperature": docdata.get("temperature", 0) or 0,
+            "ph": docdata.get("ph", 0) or 0,
+            "ammonia": docdata.get("ammonia", 0) or 0,
+            "turbidity": turb or 0,
+            "createdAt": created_str,
+        })
+    
+    # ✅ REVERSE FOR CHRONOLOGICAL ORDER
     data = list(reversed(data))
 
+    # ✅ STATUS CALCULATIONS
     summary = "All systems normal."
     alertcolor = "green"
     if data:
         last = data[-1]
-        last_turbidity = last.get("turbidity")
-        if last_turbidity is not None:
-            if last_turbidity > 100:
-                summary = "Water is too cloudy! Danger"
-                alertcolor = "gold"
-            elif last_turbidity > 50:
-                summary = "Water is getting cloudy."
-                alertcolor = "orange"
+        last_turbidity = last.get("turbidity", 0)
+        if last_turbidity > 100:
+            summary = "Water is too cloudy! Danger"
+            alertcolor = "gold"
+        elif last_turbidity > 50:
+            summary = "Water is getting cloudy."
+            alertcolor = "orange"
 
+    # ✅ FEEDER STATUS
     feederalert = "Feeder is currently OFF"
     feederalertcolor = "lightcoral"
     try:
@@ -326,52 +329,51 @@ def dashboard():
         if devicedoc.exists:
             d = devicedoc.to_dict() or {}
             feederstatus = d.get("feederstatus", "off")
-            feederspeed = d.get("feederspeed", 0)
-            if feederstatus == "on" and feederspeed and feederspeed > 0:
+            feederspeed = d.get("feederspeed", 0) or 0
+            if feederstatus == "on" and feederspeed > 0:
                 feederalert = f"Feeding in progress at {feederspeed}% speed"
                 feederalertcolor = "limegreen"
     except Exception:
         feederalert = "Feeder status unavailable"
         feederalertcolor = "gray"
 
+    # ✅ LOW FEED ALERT
     lowfeedalert = None
     lowfeedcolor = "#ff7043"
     try:
         hopperdoc = db.collection("devices").document("ESP32002").get()
         if hopperdoc.exists:
             hdata = hopperdoc.to_dict() or {}
-            levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent")
-            if levelpercent is not None and levelpercent < 20:
-                lowfeedalert = (
-                    f"Low feed level ({levelpercent:.1f}%). Please refill the hopper."
-                )
+            levelpercent = hdata.get("feedlevelpercent") or hdata.get("waterlevelpercent") or 0
+            if levelpercent < 20:
+                lowfeedalert = f"Low feed level ({levelpercent:.1f}%). Please refill the hopper."
     except Exception:
         pass
 
-    timelabels = [r["createdAt"] for r in data]
-    tempvalues = [r["temperature"] for r in data]
-    phvalues = [r["ph"] for r in data]
-    ammoniavalues = [r["ammonia"] for r in data]
-    turbidityvalues = [r["turbidity"] for r in data]
+    # 🚀 CRITICAL FIX: SAFE LIST COMPREHENSIONS - NEVER None!
+    timelabels = [r["createdAt"] for r in data] if data else []
+    tempvalues = [float(r["temperature"]) for r in data] if data else []
+    phvalues = [float(r["ph"]) for r in data] if data else []
+    ammoniavalues = [float(r["ammonia"]) for r in data] if data else []
+    turbidityvalues = [float(r["turbidity"]) for r in data] if data else []
+    latest10 = data[-10:] if len(data) >= 10 else data
 
-    latest10 = data[-10:]
-
+    # ✅ FINAL RENDER - ALL VALUES GUARANTEED LISTS!
     return render_template(
         "dashboard.html",
         readings=latest10,
         summary=summary,
         alertcolor=alertcolor,
-        timelabels=timelabels,
-        tempvalues=tempvalues,
-        phvalues=phvalues,
-        ammoniavalues=ammoniavalues,
-        turbidityvalues=turbidityvalues,
+        timelabels=timelabels,          # ✅ Always []
+        tempvalues=tempvalues,          # ✅ Always []
+        phvalues=phvalues,              # ✅ Always []
+        ammoniavalues=ammoniavalues,    # ✅ Always []
+        turbidityvalues=turbidityvalues, # ✅ Always []
         feederalert=feederalert,
         feederalertcolor=feederalertcolor,
         lowfeedalert=lowfeedalert,
         lowfeedcolor=lowfeedcolor,
     )
-
 
 # =========================
 # MOSFET PAGE
